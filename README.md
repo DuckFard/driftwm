@@ -177,7 +177,7 @@ window-search script that lets you search and jump to any open window.
 - New window placement: in viewport center (default), under cursor, or snapped adjacent to the focused window's cluster
 - Click-to-focus (default) or focus-follows-mouse (sloppy focus)
 - Session lock (swaylock), idle notify (swayidle/hypridle)
-- Screen capture: screencasting (OBS, Firefox, Discord — requires `xdg-desktop-portal` + `xdg-desktop-portal-wlr`) and screenshots (grim + slurp)
+- Screen capture: screencasting (OBS, Firefox, Discord — requires `xdg-desktop-portal` + `xdg-desktop-portal-cosmic`, supports per-window picking, or `xdg-desktop-portal-wlr` for full-output only) and screenshots (grim + slurp)
 - 30+ Wayland protocols
 
 ## Install

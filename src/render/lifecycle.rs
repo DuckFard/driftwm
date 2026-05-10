@@ -15,6 +15,7 @@ pub fn refresh_foreign_toplevels(state: &mut crate::state::DriftWm) {
     let outputs: Vec<Output> = state.space.outputs().cloned().collect();
     driftwm::protocols::foreign_toplevel::refresh::<crate::state::DriftWm>(
         &mut state.foreign_toplevel_state,
+        &mut state.foreign_toplevel_list_state,
         &state.space,
         focused.as_ref(),
         &outputs,

@@ -7,32 +7,42 @@ use smithay::reexports::wayland_protocols::ext::image_copy_capture::v1::server::
 };
 use smithay::reexports::wayland_server::protocol::wl_buffer::WlBuffer;
 use smithay::reexports::wayland_server::protocol::wl_shm::Format;
+use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{
     Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
 };
 use smithay::utils::{Physical, Size};
+use smithay::wayland::image_capture_source::ImageCaptureSource;
 
 use ext_image_copy_capture_cursor_session_v1::ExtImageCopyCaptureCursorSessionV1;
 use ext_image_copy_capture_frame_v1::ExtImageCopyCaptureFrameV1;
 use ext_image_copy_capture_manager_v1::ExtImageCopyCaptureManagerV1;
 use ext_image_copy_capture_session_v1::ExtImageCopyCaptureSessionV1;
 
-use super::image_capture_source::CaptureSource;
+use super::image_capture_source::SourceKind;
 
 const VERSION: u32 = 1;
+
+/// What a pending capture should render — output (full screen) or a single
+/// window's surface tree.
+#[derive(Debug, Clone)]
+pub enum PendingCaptureKind {
+    Output(Output),
+    Toplevel(WlSurface),
+}
 
 /// A pending capture ready to be fulfilled by the render loop.
 pub struct PendingCapture {
     pub frame: ExtImageCopyCaptureFrameV1,
     pub buffer: WlBuffer,
-    pub output: Output,
+    pub kind: PendingCaptureKind,
     pub paint_cursors: bool,
     pub buffer_size: Size<i32, Physical>,
 }
 
 /// Per-session state stored by the compositor.
 struct SessionData {
-    source: CaptureSource,
+    source: SourceKind,
     paint_cursors: bool,
     buffer_size: Size<i32, Physical>,
     has_active_frame: bool,
@@ -88,7 +98,9 @@ impl ImageCopyCaptureState {
             if session.stopped {
                 continue;
             }
-            let CaptureSource::Output(ref session_output) = session.source;
+            let SourceKind::Output(ref session_output) = session.source else {
+                continue;
+            };
             if session_output != output {
                 continue;
             }
@@ -96,7 +108,7 @@ impl ImageCopyCaptureState {
                 pending.push(PendingCapture {
                     frame: waiting.frame,
                     buffer: waiting.buffer,
-                    output: output.clone(),
+                    kind: PendingCaptureKind::Output(output.clone()),
                     paint_cursors: session.paint_cursors,
                     buffer_size: session.buffer_size,
                 });
@@ -115,7 +127,9 @@ impl ImageCopyCaptureState {
     /// Send stopped to all sessions capturing a given output, and remove them.
     pub fn remove_output(&mut self, output: &Output) {
         self.sessions.retain(|(session_obj, session)| {
-            let CaptureSource::Output(ref session_output) = session.source;
+            let SourceKind::Output(ref session_output) = session.source else {
+                return true;
+            };
             if session_output == output {
                 if session_obj.is_alive() {
                     session_obj.stopped();
@@ -125,6 +139,54 @@ impl ImageCopyCaptureState {
                 true
             }
         });
+    }
+
+    /// Send stopped to all sessions capturing a given toplevel surface, and
+    /// remove them. Call when a window closes.
+    pub fn remove_toplevel(&mut self, surface: &WlSurface) {
+        self.sessions.retain(|(session_obj, session)| {
+            let SourceKind::Toplevel {
+                surface: ref session_surface,
+                ..
+            } = session.source
+            else {
+                return true;
+            };
+            if session_surface == surface {
+                if session_obj.is_alive() {
+                    session_obj.stopped();
+                }
+                false
+            } else {
+                true
+            }
+        });
+    }
+
+    /// Promote every waiting toplevel-capture frame to a pending capture.
+    /// Toplevel captures don't have damage tracking yet — we promote on
+    /// every frame the compositor renders.
+    pub fn promote_waiting_toplevel_frames(&mut self, pending: &mut Vec<PendingCapture>) {
+        for (_session_obj, session) in &mut self.sessions {
+            if session.stopped {
+                continue;
+            }
+            let SourceKind::Toplevel { ref surface, .. } = session.source else {
+                continue;
+            };
+            if !surface.is_alive() {
+                continue;
+            }
+            if let Some(waiting) = session.waiting_frame.take() {
+                pending.push(PendingCapture {
+                    frame: waiting.frame,
+                    buffer: waiting.buffer,
+                    kind: PendingCaptureKind::Toplevel(surface.clone()),
+                    paint_cursors: session.paint_cursors,
+                    buffer_size: session.buffer_size,
+                });
+            }
+        }
     }
 
     /// Clean up dead sessions.
@@ -138,6 +200,15 @@ impl ImageCopyCaptureState {
 pub trait ImageCopyCaptureHandler {
     fn image_copy_capture_state(&mut self) -> &mut ImageCopyCaptureState;
     fn capture_frame(&mut self, capture: PendingCapture);
+
+    /// DRM render-node `dev_t` and supported DMA-BUF formats. Returning `None`
+    /// leaves SHM as the only buffer path — modern clients (xdph-cosmic) skip
+    /// SHM entirely and will fail unless DMA-BUF is advertised.
+    fn dmabuf_constraints(
+        &self,
+    ) -> Option<(u64, smithay::backend::allocator::format::FormatSet)> {
+        None
+    }
 }
 
 // --- GlobalDispatch: manager ---
@@ -195,37 +266,72 @@ where
                 source,
                 options,
             } => {
-                let capture_source: CaptureSource = source.data::<CaptureSource>().unwrap().clone();
+                let kind = ImageCaptureSource::from_resource(&source)
+                    .and_then(|s| s.user_data().get::<SourceKind>().cloned())
+                    .unwrap_or(SourceKind::Destroyed);
                 let paint_cursors = options
                     .into_result()
                     .is_ok_and(|o| o.contains(ext_image_copy_capture_manager_v1::Options::PaintCursors));
 
-                let CaptureSource::Output(ref output) = capture_source;
-                let buffer_size = output
-                    .current_mode()
-                    .map(|m| output.current_transform().transform_size(m.size))
-                    .unwrap_or((1, 1).into());
+                let buffer_size = match &kind {
+                    SourceKind::Output(output) => output
+                        .current_mode()
+                        .map(|m| output.current_transform().transform_size(m.size))
+                        .unwrap_or((1, 1).into()),
+                    SourceKind::Toplevel { initial_size, .. } => *initial_size,
+                    SourceKind::Destroyed => (1, 1).into(),
+                };
+
+                let dmabuf_info = state.dmabuf_constraints();
 
                 let session_obj = data_init.init(session, ());
 
-                // Send buffer constraints
+                // Send buffer constraints. Order between shm_format / dmabuf_*
+                // doesn't matter per protocol; buffer_size and done are required.
                 session_obj.buffer_size(buffer_size.w as u32, buffer_size.h as u32);
                 session_obj.shm_format(Format::Xrgb8888);
-                // TODO: advertise DMA-BUF format + device via dmabuf_device(dev_t)
-                // + dmabuf_format(fourcc, modifiers). Requires plumbing DRM render node
-                // device info from the backend. portal-wlr uses wlr-screencopy (not
-                // ext-image-copy-capture), so this doesn't block OBS.
+                session_obj.shm_format(Format::Argb8888);
+
+                if let Some((dev_t, formats)) = dmabuf_info {
+                    session_obj.dmabuf_device(dev_t.to_ne_bytes().to_vec());
+
+                    // Group modifiers by fourcc — protocol expects one event
+                    // per fourcc with all valid modifiers packed as u64s.
+                    // BTreeMap so emission order is stable across sessions
+                    // (helps when diffing wireshark/debug traces).
+                    let mut by_fourcc: std::collections::BTreeMap<u32, Vec<u64>> =
+                        std::collections::BTreeMap::new();
+                    for fmt in formats.iter() {
+                        by_fourcc
+                            .entry(fmt.code as u32)
+                            .or_default()
+                            .push(u64::from(fmt.modifier));
+                    }
+                    for (fourcc, mods) in by_fourcc {
+                        let mods_bytes: Vec<u8> =
+                            mods.iter().flat_map(|m| m.to_ne_bytes()).collect();
+                        session_obj.dmabuf_format(fourcc, mods_bytes);
+                    }
+                }
                 session_obj.done();
+
+                // Source already gone by the time the session was created —
+                // accept it but immediately stop, so the client cleans up.
+                let stopped = matches!(kind, SourceKind::Destroyed)
+                    || matches!(&kind, SourceKind::Toplevel { surface, .. } if !surface.is_alive());
+                if stopped {
+                    session_obj.stopped();
+                }
 
                 let cap_state = state.image_copy_capture_state();
                 cap_state.sessions.push((
                     session_obj,
                     SessionData {
-                        source: capture_source,
+                        source: kind,
                         paint_cursors,
                         buffer_size,
                         has_active_frame: false,
-                        stopped: false,
+                        stopped,
                         waiting_frame: None,
                         has_captured_once: false,
                     },
@@ -394,14 +500,30 @@ where
                     return;
                 }
 
-                let CaptureSource::Output(ref output) = session_data.source;
+                let kind = match &session_data.source {
+                    SourceKind::Output(o) => PendingCaptureKind::Output(o.clone()),
+                    SourceKind::Toplevel { surface, .. } if surface.is_alive() => {
+                        PendingCaptureKind::Toplevel(surface.clone())
+                    }
+                    SourceKind::Toplevel { .. } | SourceKind::Destroyed => {
+                        // Source vanished between session creation and this
+                        // capture request — terminate the session.
+                        session_data.stopped = true;
+                        if session_obj.is_alive() {
+                            session_obj.stopped();
+                        }
+                        frame.failed(ext_image_copy_capture_frame_v1::FailureReason::Stopped);
+                        return;
+                    }
+                };
 
-                // First capture: render immediately. Subsequent: wait for damage.
+                // First capture: render immediately. Subsequent: wait for damage
+                // (output) or wait for next frame (toplevel).
                 if !session_data.has_captured_once {
                     let capture = PendingCapture {
                         frame: frame.clone(),
                         buffer,
-                        output: output.clone(),
+                        kind,
                         paint_cursors: session_data.paint_cursors,
                         buffer_size: session_data.buffer_size,
                     };

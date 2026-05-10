@@ -237,6 +237,7 @@ pub fn init_winit(
                     }
                     crate::render::render_screencopy(data, renderer, &output, &all_elements);
                     crate::render::render_capture_frames(data, renderer, &output, &all_elements);
+                    crate::render::render_toplevel_captures(data, renderer);
                     true
                 }
                 Err(err) => {

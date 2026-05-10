@@ -68,7 +68,16 @@ impl DriftWm {
                 xdg_toplevel::WmCapabilities::Maximize,
             ],
         );
-        let shm_state = ShmState::new::<Self>(&dh, vec![]);
+        // wl_shm advertises Argb8888 + Xrgb8888 unconditionally; extra formats
+        // here are needed by smithay-client-toolkit-based clients (xdph-cosmic,
+        // sctk apps) that allocate buffers in renderer-native layouts.
+        let shm_state = ShmState::new::<Self>(
+            &dh,
+            vec![
+                smithay::reexports::wayland_server::protocol::wl_shm::Format::Abgr8888,
+                smithay::reexports::wayland_server::protocol::wl_shm::Format::Xbgr8888,
+            ],
+        );
         let output_manager_state = OutputManagerState::new_with_xdg_output::<Self>(&dh);
         let mut seat_state = SeatState::new();
         let data_device_state = DataDeviceState::new::<Self>(&dh);
@@ -105,16 +114,27 @@ impl DriftWm {
                 &dh,
                 client_is_unrestricted,
             );
+        let foreign_toplevel_list_state =
+            smithay::wayland::foreign_toplevel_list::ForeignToplevelListState::new_with_filter::<
+                Self,
+            >(&dh, client_is_unrestricted);
         let screencopy_state =
             driftwm::protocols::screencopy::ScreencopyManagerState::new::<Self, _>(
                 &dh,
                 client_is_unrestricted,
             );
         let image_capture_source_state =
-            driftwm::protocols::image_capture_source::ImageCaptureSourceState::new::<Self, _>(
-                &dh,
-                client_is_unrestricted,
-            );
+            smithay::wayland::image_capture_source::ImageCaptureSourceState::new();
+        let output_capture_source_state =
+            smithay::wayland::image_capture_source::OutputCaptureSourceState::new_with_filter::<
+                Self,
+                _,
+            >(&dh, client_is_unrestricted);
+        let toplevel_capture_source_state =
+            smithay::wayland::image_capture_source::ToplevelCaptureSourceState::new_with_filter::<
+                Self,
+                _,
+            >(&dh, client_is_unrestricted);
         let image_copy_capture_state =
             driftwm::protocols::image_copy_capture::ImageCopyCaptureState::new::<Self, _>(
                 &dh,
@@ -183,6 +203,8 @@ impl DriftWm {
             render: RenderCache::new(),
             dmabuf_state: DmabufState::new(),
             dmabuf_global: None,
+            render_device: None,
+            render_dmabuf_formats: None,
             cursor_shape_state,
             viewporter_state,
             fractional_scale_state,
@@ -201,10 +223,13 @@ impl DriftWm {
             decoration_state,
             layer_shell_state,
             foreign_toplevel_state,
+            foreign_toplevel_list_state,
             screencopy_state,
             output_management_state,
             pending_screencopies: Vec::new(),
             image_capture_source_state,
+            output_capture_source_state,
+            toplevel_capture_source_state,
             image_copy_capture_state,
             pending_captures: Vec::new(),
             xdg_foreign_state,

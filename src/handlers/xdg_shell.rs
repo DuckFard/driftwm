@@ -192,6 +192,11 @@ impl XdgShellHandler for DriftWm {
         self.pending_center.remove(&wl_surface);
         self.pending_size.remove(&wl_surface);
         self.pending_recenter.remove(&wl_surface.id());
+        self.image_copy_capture_state.remove_toplevel(&wl_surface);
+        // Drop cached capture texture/damage tracker for this surface.
+        self.render
+            .capture_state
+            .remove(&format!("cap-tl:{:?}", wl_surface.id()));
         // Collect first to avoid holding an immutable borrow on space
         let window = self
             .space

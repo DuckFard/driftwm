@@ -308,6 +308,12 @@ pub fn init_udev(
     // 4. Store renderer on state + create DMA-BUF global
     data.backend = Some(Backend::Udev(Box::new(renderer)));
     let formats = data.backend.as_mut().unwrap().renderer().dmabuf_formats();
+    data.render_device = Some(render_node.dev_id());
+    // Capture clients allocate buffers we render INTO, so advertise the
+    // render-target set (already CCS-filtered above) — not the wider
+    // import set, which can include formats we can't bind as a target.
+    data.render_dmabuf_formats =
+        Some(render_formats.iter().copied().collect());
     let default_feedback = DmabufFeedbackBuilder::new(render_node.dev_id(), formats)
         .build()
         .expect("failed to build dmabuf feedback");
@@ -1215,6 +1221,9 @@ fn render_frame(
 
     let renderer = backend.renderer();
     crate::render::render_capture_frames(data, renderer, output, &elements);
+
+    let renderer = backend.renderer();
+    crate::render::render_toplevel_captures(data, renderer);
 
     // Put backend back
     data.backend = Some(backend);

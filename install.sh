@@ -61,12 +61,53 @@ check_runtime_deps() {
     fi
 }
 
+check_portal_deps() {
+    # Portals are optional but recommended. xdph-cosmic gives per-window
+    # screencast (Brave Meet, OBS); xdph-wlr is the monitor-only fallback.
+    has_cosmic=0
+    has_wlr=0
+    for p in /usr/libexec/xdg-desktop-portal-cosmic /usr/lib/xdg-desktop-portal-cosmic; do
+        [ -x "$p" ] && has_cosmic=1
+    done
+    for p in /usr/libexec/xdg-desktop-portal-wlr /usr/lib/xdg-desktop-portal-wlr; do
+        [ -x "$p" ] && has_wlr=1
+    done
+
+    if [ "$has_cosmic" -eq 0 ] && [ "$has_wlr" -eq 0 ]; then
+        bold "Optional: install a screencast portal for OBS / Brave Meet / Firefox screen sharing."
+        distro=$(detect_distro)
+        case "$distro" in
+            fedora|rhel|centos)
+                echo "  sudo dnf install xdg-desktop-portal-cosmic   # per-window + monitor"
+                echo "  sudo dnf install xdg-desktop-portal-wlr      # monitor only"
+                ;;
+            ubuntu|debian|linuxmint|pop)
+                echo "  sudo apt install xdg-desktop-portal-cosmic   # per-window + monitor (if packaged)"
+                echo "  sudo apt install xdg-desktop-portal-wlr      # monitor only"
+                ;;
+            arch|manjaro|endeavouros)
+                echo "  sudo pacman -S xdg-desktop-portal-cosmic     # per-window + monitor"
+                echo "  sudo pacman -S xdg-desktop-portal-wlr        # monitor only"
+                ;;
+            *)
+                echo "  Install xdg-desktop-portal-cosmic (preferred) or xdg-desktop-portal-wlr."
+                ;;
+        esac
+        echo ""
+    elif [ "$has_cosmic" -eq 0 ]; then
+        bold "Note: only xdg-desktop-portal-wlr is installed (monitor capture only)."
+        echo "  For per-window screencast (Brave Meet, OBS window sharing), install xdg-desktop-portal-cosmic."
+        echo ""
+    fi
+}
+
 do_install() {
     check_root
 
     bold "Checking runtime dependencies..."
     check_runtime_deps
     green "All runtime dependencies found."
+    check_portal_deps
 
     bold "Fetching latest release..."
     if ! command -v curl >/dev/null 2>&1; then

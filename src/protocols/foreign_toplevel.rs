@@ -1,6 +1,10 @@
-//! `zwlr-foreign-toplevel-management-v1` protocol implementation.
+//! `zwlr-foreign-toplevel-management-v1` (wlr) implementation, with companion
+//! plumbing that mirrors each window into `ext-foreign-toplevel-list-v1`.
 //!
-//! Allows external apps (taskbars, docks) to list, activate, and close windows.
+//! Both protocols are kept alive: ext-* is enumerate-only and is what
+//! ext-image-copy-capture pairs with for per-window screencast; wlr- carries
+//! the `activate`/`close`/`set_fullscreen` requests that taskbars and docks
+//! still rely on.
 
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
@@ -17,6 +21,7 @@ use smithay::reexports::wayland_server::{
     Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
 };
 use smithay::wayland::compositor::with_states;
+use smithay::wayland::foreign_toplevel_list::{ForeignToplevelHandle, ForeignToplevelListState};
 use smithay::wayland::seat::WaylandFocus;
 use wayland_protocols_wlr::foreign_toplevel::v1::server::{
     zwlr_foreign_toplevel_handle_v1, zwlr_foreign_toplevel_manager_v1,
@@ -49,6 +54,10 @@ struct ToplevelData {
     states: Vec<u32>,
     /// All WlOutputs we've sent output_enter for, per handle instance.
     instances: HashMap<ZwlrForeignToplevelHandleV1, Vec<WlOutput>>,
+    /// ext-foreign-toplevel-list-v1 mirror handle. The corresponding
+    /// `WlSurface` is stashed in its user_data so capture sources can recover
+    /// it from a `ForeignToplevelHandle`.
+    ext_handle: ForeignToplevelHandle,
 }
 
 pub struct ForeignToplevelGlobalData {
@@ -79,15 +88,21 @@ impl ForeignToplevelManagerState {
 /// Call once per frame (not per-output) — windows on the infinite canvas
 /// appear on all outputs, so there's no per-output tracking.
 ///
-/// Takes split references to avoid borrow conflicts with DriftWm.
+/// Drives both wlr- and ext-foreign-toplevel-list in lockstep.
 /// Generic over D (the compositor state type) for `create_resource` dispatch.
 pub fn refresh<D>(
     ft_state: &mut ForeignToplevelManagerState,
+    ext_state: &mut ForeignToplevelListState,
     space: &Space<Window>,
     focused_surface: Option<&WlSurface>,
     outputs: &[Output],
 ) where
     D: Dispatch<ZwlrForeignToplevelHandleV1, ()> + 'static,
+    D: Dispatch<
+            smithay::reexports::wayland_protocols::ext::foreign_toplevel_list::v1::server::ext_foreign_toplevel_handle_v1::ExtForeignToplevelHandleV1,
+            ForeignToplevelHandle,
+        > + 'static,
+    D: smithay::wayland::foreign_toplevel_list::ForeignToplevelListHandler,
 {
     // 1. Remove closed or widget windows
     ft_state.toplevels.retain(|surface, data| {
@@ -99,6 +114,7 @@ pub fn refresh<D>(
             for instance in data.instances.keys() {
                 instance.closed();
             }
+            data.ext_handle.send_closed();
         }
         alive
     });
@@ -118,7 +134,7 @@ pub fn refresh<D>(
             focused_entry = Some(window.clone());
             continue;
         }
-        refresh_toplevel::<D>(ft_state, window, &wl_surface, outputs, false);
+        refresh_toplevel::<D>(ft_state, ext_state, window, &wl_surface, outputs, false);
     }
 
     // 3. Refresh focused window last (with Activated state)
@@ -126,8 +142,14 @@ pub fn refresh<D>(
         let Some(wl_surface) = window.wl_surface().map(|s| s.into_owned()) else {
             return;
         };
-        refresh_toplevel::<D>(ft_state, &window, &wl_surface, outputs, true);
+        refresh_toplevel::<D>(ft_state, ext_state, &window, &wl_surface, outputs, true);
     }
+}
+
+/// Recover the `WlSurface` for a foreign toplevel handle, if the window
+/// represented by `handle` is still alive in the toplevel map.
+pub fn surface_for_ext_handle(handle: &ForeignToplevelHandle) -> Option<WlSurface> {
+    handle.user_data().get::<WlSurface>().cloned()
 }
 
 /// Send output_enter for a newly connected output to all existing toplevels.
@@ -171,12 +193,18 @@ pub fn send_output_leave_all(ft_state: &mut ForeignToplevelManagerState, output:
 
 fn refresh_toplevel<D>(
     protocol_state: &mut ForeignToplevelManagerState,
+    ext_state: &mut ForeignToplevelListState,
     window: &Window,
     wl_surface: &WlSurface,
     outputs: &[Output],
     has_focus: bool,
 ) where
     D: Dispatch<ZwlrForeignToplevelHandleV1, ()> + 'static,
+    D: Dispatch<
+            smithay::reexports::wayland_protocols::ext::foreign_toplevel_list::v1::server::ext_foreign_toplevel_handle_v1::ExtForeignToplevelHandleV1,
+            ForeignToplevelHandle,
+        > + 'static,
+    D: smithay::wayland::foreign_toplevel_list::ForeignToplevelListHandler,
 {
     // Read title/app_id via WindowExt
     let title = window.window_title();
@@ -231,6 +259,21 @@ fn refresh_toplevel<D>(
                     }
                     instance.done();
                 }
+
+                // Mirror to ext handle. The ext protocol carries no state bits,
+                // only title/app_id, so changes there are gated separately.
+                let mut ext_changed = false;
+                if let Some(t) = new_title {
+                    data.ext_handle.send_title(t);
+                    ext_changed = true;
+                }
+                if let Some(a) = new_app_id {
+                    data.ext_handle.send_app_id(a);
+                    ext_changed = true;
+                }
+                if ext_changed {
+                    data.ext_handle.send_done();
+                }
             }
 
             // Clean dead wl_outputs
@@ -240,11 +283,21 @@ fn refresh_toplevel<D>(
         }
         Entry::Vacant(entry) => {
             // New window — send output_enter for ALL outputs
+            let ext_handle = ext_state.new_toplevel::<D>(
+                title.clone().unwrap_or_default(),
+                app_id.clone().unwrap_or_default(),
+            );
+            // Stash the WlSurface so capture sources created later can recover it.
+            ext_handle
+                .user_data()
+                .insert_if_missing(|| wl_surface.clone());
+
             let mut data = ToplevelData {
                 title,
                 app_id,
                 states,
                 instances: HashMap::new(),
+                ext_handle,
             };
 
             for manager in &protocol_state.instances {

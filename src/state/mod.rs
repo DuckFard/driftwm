@@ -314,6 +314,12 @@ pub struct DriftWm {
     // -- global: protocol state (held for smithay delegate macros) --
     pub dmabuf_state: DmabufState,
     pub dmabuf_global: Option<DmabufGlobal>,
+    /// DRM render-node `dev_t` and DMA-BUF formats accepted by the renderer.
+    /// `None` on the winit backend (nested compositor — no direct DRM device).
+    /// Used by ext-image-copy-capture to advertise DMA-BUF constraints.
+    pub render_device: Option<u64>,
+    pub render_dmabuf_formats:
+        Option<smithay::backend::allocator::format::FormatSet>,
     #[allow(dead_code)]
     pub cursor_shape_state: CursorShapeManagerState,
     #[allow(dead_code)]
@@ -346,12 +352,17 @@ pub struct DriftWm {
     pub decoration_state: XdgDecorationState,
     pub layer_shell_state: WlrLayerShellState,
     pub foreign_toplevel_state: driftwm::protocols::foreign_toplevel::ForeignToplevelManagerState,
+    pub foreign_toplevel_list_state:
+        smithay::wayland::foreign_toplevel_list::ForeignToplevelListState,
     pub screencopy_state: driftwm::protocols::screencopy::ScreencopyManagerState,
     pub output_management_state: driftwm::protocols::output_management::OutputManagementState,
     pub pending_screencopies: Vec<driftwm::protocols::screencopy::Screencopy>,
     #[allow(dead_code)]
-    pub image_capture_source_state:
-        driftwm::protocols::image_capture_source::ImageCaptureSourceState,
+    pub image_capture_source_state: smithay::wayland::image_capture_source::ImageCaptureSourceState,
+    pub output_capture_source_state:
+        smithay::wayland::image_capture_source::OutputCaptureSourceState,
+    pub toplevel_capture_source_state:
+        smithay::wayland::image_capture_source::ToplevelCaptureSourceState,
     pub image_copy_capture_state: driftwm::protocols::image_copy_capture::ImageCopyCaptureState,
     pub pending_captures: Vec<driftwm::protocols::image_copy_capture::PendingCapture>,
     pub xdg_foreign_state: XdgForeignState,

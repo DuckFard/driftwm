@@ -644,6 +644,16 @@ impl ForeignToplevelHandler for DriftWm {
 
 driftwm::delegate_foreign_toplevel!(DriftWm);
 
+impl smithay::wayland::foreign_toplevel_list::ForeignToplevelListHandler for DriftWm {
+    fn foreign_toplevel_list_state(
+        &mut self,
+    ) -> &mut smithay::wayland::foreign_toplevel_list::ForeignToplevelListState {
+        &mut self.foreign_toplevel_list_state
+    }
+}
+
+smithay::delegate_foreign_toplevel_list!(DriftWm);
+
 use driftwm::protocols::screencopy::{Screencopy, ScreencopyHandler, ScreencopyManagerState};
 
 impl ScreencopyHandler for DriftWm {
@@ -658,7 +668,69 @@ impl ScreencopyHandler for DriftWm {
 
 driftwm::delegate_screencopy!(DriftWm);
 
-driftwm::delegate_image_capture_source!(DriftWm);
+use smithay::wayland::foreign_toplevel_list::ForeignToplevelHandle;
+use smithay::wayland::image_capture_source::{
+    ImageCaptureSource, ImageCaptureSourceHandler, OutputCaptureSourceHandler,
+    OutputCaptureSourceState, ToplevelCaptureSourceHandler, ToplevelCaptureSourceState,
+};
+
+impl ImageCaptureSourceHandler for DriftWm {
+    fn source_destroyed(&mut self, _source: ImageCaptureSource) {}
+}
+
+impl OutputCaptureSourceHandler for DriftWm {
+    fn output_capture_source_state(&mut self) -> &mut OutputCaptureSourceState {
+        &mut self.output_capture_source_state
+    }
+
+    fn output_source_created(
+        &mut self,
+        source: ImageCaptureSource,
+        output: &smithay::output::Output,
+    ) {
+        source
+            .user_data()
+            .insert_if_missing(|| driftwm::protocols::image_capture_source::SourceKind::Output(
+                output.clone(),
+            ));
+    }
+}
+
+impl ToplevelCaptureSourceHandler for DriftWm {
+    fn toplevel_capture_source_state(&mut self) -> &mut ToplevelCaptureSourceState {
+        &mut self.toplevel_capture_source_state
+    }
+
+    fn toplevel_source_created(
+        &mut self,
+        source: ImageCaptureSource,
+        toplevel: ForeignToplevelHandle,
+    ) {
+        let kind = match driftwm::protocols::foreign_toplevel::surface_for_ext_handle(&toplevel) {
+            Some(surface) => {
+                let initial_size = self
+                    .space
+                    .elements()
+                    .find(|w| w.wl_surface().as_deref() == Some(&surface))
+                    .map(|w| {
+                        let geo = w.geometry().size;
+                        smithay::utils::Size::from((geo.w.max(1), geo.h.max(1)))
+                    })
+                    .unwrap_or_else(|| (1, 1).into());
+                driftwm::protocols::image_capture_source::SourceKind::Toplevel {
+                    surface,
+                    initial_size,
+                }
+            }
+            None => driftwm::protocols::image_capture_source::SourceKind::Destroyed,
+        };
+        source.user_data().insert_if_missing(|| kind);
+    }
+}
+
+smithay::delegate_image_capture_source!(DriftWm);
+smithay::delegate_output_capture_source!(DriftWm);
+smithay::delegate_toplevel_capture_source!(DriftWm);
 
 use driftwm::protocols::image_copy_capture::{
     ImageCopyCaptureHandler, ImageCopyCaptureState, PendingCapture,
@@ -671,6 +743,12 @@ impl ImageCopyCaptureHandler for DriftWm {
 
     fn capture_frame(&mut self, capture: PendingCapture) {
         self.pending_captures.push(capture);
+    }
+
+    fn dmabuf_constraints(
+        &self,
+    ) -> Option<(u64, smithay::backend::allocator::format::FormatSet)> {
+        Some((self.render_device?, self.render_dmabuf_formats.clone()?))
     }
 }
 

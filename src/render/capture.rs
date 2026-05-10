@@ -3,6 +3,7 @@ use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::output::Output;
 use smithay::reexports::wayland_server::Resource;
 use smithay::utils::{Physical, Rectangle, Scale, Size, Transform};
+use smithay::wayland::seat::WaylandFocus;
 
 use super::OutputRenderElements;
 
@@ -110,7 +111,7 @@ pub fn render_screencopy(
                 } else {
                     None
                 };
-                let result = render_to_offscreen(renderer, size, scale, transform, &use_elements, cs);
+                let result = render_to_offscreen(renderer, size, scale, transform, Fourcc::Xrgb8888, &use_elements, cs);
                 match result {
                     Ok(mapping) => {
                         let copy_ok =
@@ -150,11 +151,30 @@ pub fn render_screencopy(
 /// Render elements to an offscreen texture and download the pixels.
 /// When `capture_state` is provided, reuses the damage tracker and texture across frames
 /// for incremental rendering. Falls back to one-shot (age=0) when None.
+/// Clear color for a given fourcc — opaque black for X-prefixed (no alpha
+/// channel), transparent for A-prefixed (alpha preserved through render).
+fn clear_color_for(format: Fourcc) -> [f32; 4] {
+    match format {
+        Fourcc::Argb8888
+        | Fourcc::Abgr8888
+        | Fourcc::Rgba8888
+        | Fourcc::Bgra8888
+        | Fourcc::Argb2101010
+        | Fourcc::Abgr2101010
+        | Fourcc::Rgba1010102
+        | Fourcc::Bgra1010102
+        | Fourcc::Argb16161616f
+        | Fourcc::Abgr16161616f => [0.0, 0.0, 0.0, 0.0],
+        _ => [0.0, 0.0, 0.0, 1.0],
+    }
+}
+
 fn render_to_offscreen(
     renderer: &mut GlesRenderer,
     size: smithay::utils::Size<i32, Physical>,
     scale: Scale<f64>,
     transform: Transform,
+    format: Fourcc,
     elements: &[&OutputRenderElements],
     capture_state: Option<&mut crate::state::CaptureOutputState>,
 ) -> Result<smithay::backend::renderer::gles::GlesMapping, Box<dyn std::error::Error>> {
@@ -163,13 +183,14 @@ fn render_to_offscreen(
     use smithay::backend::renderer::gles::GlesTexture;
 
     let buffer_size = size.to_logical(1).to_buffer(1, Transform::Normal);
+    let clear = clear_color_for(format);
 
     if let Some(cs) = capture_state {
         // Reuse or reallocate texture when size changes
         let tex = match &mut cs.offscreen_texture {
             Some((tex, cached_size)) if *cached_size == size => tex,
             slot => {
-                let new_tex: GlesTexture = Offscreen::<GlesTexture>::create_buffer(renderer, Fourcc::Xrgb8888, buffer_size)?;
+                let new_tex: GlesTexture = Offscreen::<GlesTexture>::create_buffer(renderer, format, buffer_size)?;
                 *slot = Some((new_tex, size));
                 cs.damage_tracker = OutputDamageTracker::new(size, scale, transform);
                 cs.age = 0;
@@ -184,16 +205,16 @@ fn render_to_offscreen(
                 &mut target,
                 cs.age,
                 elements,
-                [0.0f32, 0.0, 0.0, 1.0],
+                clear,
             )?;
         }
         cs.age += 1;
 
         let target = renderer.bind(tex)?;
-        let mapping = renderer.copy_framebuffer(&target, Rectangle::from_size(buffer_size), Fourcc::Xrgb8888)?;
+        let mapping = renderer.copy_framebuffer(&target, Rectangle::from_size(buffer_size), format)?;
         Ok(mapping)
     } else {
-        let mut texture: GlesTexture = Offscreen::<GlesTexture>::create_buffer(renderer, Fourcc::Xrgb8888, buffer_size)?;
+        let mut texture: GlesTexture = Offscreen::<GlesTexture>::create_buffer(renderer, format, buffer_size)?;
         {
             let mut target = renderer.bind(&mut texture)?;
             let mut damage_tracker = OutputDamageTracker::new(size, scale, transform);
@@ -202,11 +223,11 @@ fn render_to_offscreen(
                 &mut target,
                 0,
                 elements,
-                [0.0f32, 0.0, 0.0, 1.0],
+                clear,
             )?;
         }
         let target = renderer.bind(&mut texture)?;
-        let mapping = renderer.copy_framebuffer(&target, Rectangle::from_size(buffer_size), Fourcc::Xrgb8888)?;
+        let mapping = renderer.copy_framebuffer(&target, Rectangle::from_size(buffer_size), format)?;
         Ok(mapping)
     }
 }
@@ -227,9 +248,11 @@ fn render_to_dmabuf(
     elements: &[&OutputRenderElements],
     capture_state: Option<&mut crate::state::CaptureOutputState>,
 ) -> Result<smithay::backend::renderer::sync::SyncPoint, Box<dyn std::error::Error>> {
+    use smithay::backend::allocator::Buffer;
     use smithay::backend::renderer::Bind;
     use smithay::backend::renderer::damage::OutputDamageTracker;
 
+    let clear = clear_color_for(dmabuf.format().code);
     let sync = match capture_state {
         Some(cs) => {
             let mut target = renderer.bind(dmabuf)?;
@@ -238,7 +261,7 @@ fn render_to_dmabuf(
                 &mut target,
                 cs.age,
                 elements,
-                [0.0f32, 0.0, 0.0, 1.0],
+                clear,
             )?.sync;
             cs.age += 1;
             result
@@ -251,7 +274,7 @@ fn render_to_dmabuf(
                 &mut target,
                 0,
                 elements,
-                [0.0f32, 0.0, 0.0, 1.0],
+                clear,
             )?.sync
         }
     };
@@ -275,11 +298,16 @@ pub fn render_capture_frames(
         .image_copy_capture_state
         .promote_waiting_frames(output, &mut state.pending_captures);
 
-    // Extract captures for this output
+    // Extract captures for this output (toplevel captures are routed
+    // separately by `render_toplevel_captures`).
     let mut pending = Vec::new();
     let mut i = 0;
     while i < state.pending_captures.len() {
-        if &state.pending_captures[i].output == output {
+        let matches = matches!(
+            &state.pending_captures[i].kind,
+            driftwm::protocols::image_copy_capture::PendingCaptureKind::Output(o) if o == output,
+        );
+        if matches {
             pending.push(state.pending_captures.swap_remove(i));
         } else {
             i += 1;
@@ -350,7 +378,7 @@ pub fn render_capture_frames(
             } else {
                 None
             };
-            let result = render_to_offscreen(renderer, capture.buffer_size, scale, Transform::Normal, &use_elements, cs);
+            let result = render_to_offscreen(renderer, capture.buffer_size, scale, Transform::Normal, Fourcc::Xrgb8888, &use_elements, cs);
             match result {
                 Ok(mapping) => {
                     shm::with_buffer_contents_mut(&capture.buffer, |shm_buf, shm_len, _data| {
@@ -388,6 +416,226 @@ pub fn render_capture_frames(
             capture.frame.ready();
 
             let frame_data = capture.frame.data::<std::sync::Mutex<driftwm::protocols::image_copy_capture::CaptureFrameData>>();
+            if let Some(fd) = frame_data {
+                let fd = fd.lock().unwrap();
+                state.image_copy_capture_state.frame_done(&fd.session);
+            }
+        } else {
+            capture.frame.failed(fail_reason);
+        }
+    }
+}
+
+/// Fulfill pending ext-image-copy-capture frames whose source is a toplevel
+/// window. Renders the client surface tree at scale 1, with the window's
+/// geometry origin at (0,0) — no SSD chrome, no shadow.
+///
+/// Currently invoked from each output's render path; the first call drains
+/// `pending_captures` so subsequent per-output calls are cheap no-ops.
+///
+/// Note: `paint_cursors` is silently ignored for toplevel captures —
+/// compositing the cursor onto a window-relative buffer requires intersecting
+/// the cursor position against the captured window's geometry, which isn't
+/// wired in yet. Per-window screencast clients typically don't request it.
+pub fn render_toplevel_captures(
+    state: &mut crate::state::DriftWm,
+    renderer: &mut GlesRenderer,
+) {
+    use driftwm::protocols::image_copy_capture::PendingCaptureKind;
+    use smithay::backend::renderer::element::Kind;
+    use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
+    use smithay::backend::renderer::element::surface::render_elements_from_surface_tree;
+    use smithay::backend::renderer::{ExportMem, Renderer};
+    use smithay::utils::Point;
+    use smithay::wayland::shm;
+    use std::ptr;
+
+    state
+        .image_copy_capture_state
+        .promote_waiting_toplevel_frames(&mut state.pending_captures);
+
+    let mut pending = Vec::new();
+    let mut i = 0;
+    while i < state.pending_captures.len() {
+        if matches!(
+            &state.pending_captures[i].kind,
+            PendingCaptureKind::Toplevel(_)
+        ) {
+            pending.push(state.pending_captures.swap_remove(i));
+        } else {
+            i += 1;
+        }
+    }
+    if pending.is_empty() {
+        return;
+    }
+
+    let timestamp = state.start_time.elapsed();
+    let scale = Scale::from(1.0);
+    let fail_reason = smithay::reexports::wayland_protocols::ext::image_copy_capture::v1::server::ext_image_copy_capture_frame_v1::FailureReason::Unknown;
+
+    for capture in pending {
+        let PendingCaptureKind::Toplevel(ref surface) = capture.kind else {
+            continue;
+        };
+
+        // Locate the window. If it's gone or has zero geometry, fail the frame.
+        let window = state
+            .space
+            .elements()
+            .find(|w| w.wl_surface().as_deref() == Some(surface))
+            .cloned();
+        let Some(window) = window else {
+            capture.frame.failed(fail_reason);
+            continue;
+        };
+
+        let geo = window.geometry();
+        if geo.size.w <= 0 || geo.size.h <= 0 {
+            capture.frame.failed(fail_reason);
+            continue;
+        }
+
+        // Shift surface tree so the window's geometry origin lands at (0,0)
+        // in the capture buffer. CSD-using clients (GTK, Chromium) report
+        // a non-zero geometry offset to skip invisible shadow padding.
+        // geometry() is Logical → convert to Physical via the capture scale
+        // (currently 1.0; will matter when HiDPI capture lands).
+        let origin = Point::<i32, smithay::utils::Logical>::from((-geo.loc.x, -geo.loc.y))
+            .to_physical_precise_round(scale);
+
+        let surface_elems = render_elements_from_surface_tree::<
+            _,
+            WaylandSurfaceRenderElement<GlesRenderer>,
+        >(renderer, surface, origin, scale, 1.0, Kind::Unspecified);
+
+        // Walk popups attached to this surface (xdg dropdown menus,
+        // tooltips, autocomplete). They aren't part of the toplevel's
+        // subsurface tree — without this, captures miss any open menu.
+        let mut popup_elems: Vec<WaylandSurfaceRenderElement<GlesRenderer>> = Vec::new();
+        for (popup, popup_offset) in
+            smithay::desktop::PopupManager::popups_for_surface(surface)
+        {
+            // Popup's geometry origin in capture-buffer space is `popup_offset`
+            // (popup is positioned relative to the parent's geometry origin,
+            // which we placed at (0,0)). Surface-tree origin is then
+            // `popup_offset - popup.geometry().loc` to absorb popup CSD inset.
+            let popup_geo = popup.geometry();
+            let popup_origin = Point::<i32, smithay::utils::Logical>::from((
+                popup_offset.x - popup_geo.loc.x,
+                popup_offset.y - popup_geo.loc.y,
+            ))
+            .to_physical_precise_round(scale);
+            popup_elems.extend(render_elements_from_surface_tree::<
+                _,
+                WaylandSurfaceRenderElement<GlesRenderer>,
+            >(
+                renderer,
+                popup.wl_surface(),
+                popup_origin,
+                scale,
+                1.0,
+                Kind::Unspecified,
+            ));
+        }
+
+        // Wrap in OutputRenderElements (the Layer variant is a plain
+        // WaylandSurfaceRenderElement passthrough). Popups go FIRST so
+        // they sit above the surface tree in smithay's z-order.
+        let elems: Vec<OutputRenderElements> = popup_elems
+            .into_iter()
+            .chain(surface_elems)
+            .map(OutputRenderElements::Layer)
+            .collect();
+        let elems_refs: Vec<&OutputRenderElements> = elems.iter().collect();
+
+        // Cache key derived from the captured surface — keeps GlesTexture +
+        // damage tracker alive across frames instead of reallocating per frame.
+        let cap_key = format!("cap-tl:{:?}", surface.id());
+        let cs = Some(get_capture_state(
+            &mut state.render.capture_state,
+            &cap_key,
+            capture.buffer_size,
+            scale,
+            Transform::Normal,
+            capture.paint_cursors,
+        ));
+
+        // Try DMA-BUF first, fall back to SHM.
+        let ok = if let Ok(dmabuf) = smithay::wayland::dmabuf::get_dmabuf(&capture.buffer) {
+            let mut dmabuf = dmabuf.clone();
+            match render_to_dmabuf(
+                renderer,
+                &mut dmabuf,
+                capture.buffer_size,
+                scale,
+                Transform::Normal,
+                &elems_refs,
+                cs,
+            ) {
+                Ok(sync) => match renderer.wait(&sync) {
+                    Ok(()) => true,
+                    Err(e) => {
+                        tracing::warn!("toplevel capture: dmabuf sync wait failed: {e:?}");
+                        false
+                    }
+                },
+                Err(e) => {
+                    tracing::warn!("toplevel capture: dmabuf render failed: {e:?}");
+                    false
+                }
+            }
+        } else {
+            match render_to_offscreen(
+                renderer,
+                capture.buffer_size,
+                scale,
+                Transform::Normal,
+                Fourcc::Argb8888,
+                &elems_refs,
+                cs,
+            ) {
+                Ok(mapping) => shm::with_buffer_contents_mut(
+                    &capture.buffer,
+                    |shm_buf, shm_len, _data| {
+                        let bytes = match renderer.map_texture(&mapping) {
+                            Ok(b) => b,
+                            Err(e) => {
+                                tracing::warn!("toplevel capture: map_texture failed: {e:?}");
+                                return false;
+                            }
+                        };
+                        let copy_len = shm_len.min(bytes.len());
+                        unsafe {
+                            ptr::copy_nonoverlapping(bytes.as_ptr(), shm_buf.cast(), copy_len);
+                        }
+                        true
+                    },
+                )
+                .unwrap_or(false),
+                Err(e) => {
+                    tracing::warn!("toplevel capture: offscreen render failed: {e:?}");
+                    false
+                }
+            }
+        };
+
+        if ok {
+            let w = capture.buffer_size.w;
+            let h = capture.buffer_size.h;
+            capture.frame.transform(Transform::Normal.into());
+            capture.frame.damage(0, 0, w, h);
+            let tv_sec_hi = (timestamp.as_secs() >> 32) as u32;
+            let tv_sec_lo = (timestamp.as_secs() & 0xFFFFFFFF) as u32;
+            let tv_nsec = timestamp.subsec_nanos();
+            capture
+                .frame
+                .presentation_time(tv_sec_hi, tv_sec_lo, tv_nsec);
+            capture.frame.ready();
+
+            let frame_data = capture.frame.data::<std::sync::Mutex<
+                driftwm::protocols::image_copy_capture::CaptureFrameData,
+            >>();
             if let Some(fd) = frame_data {
                 let fd = fd.lock().unwrap();
                 state.image_copy_capture_state.frame_done(&fd.session);
