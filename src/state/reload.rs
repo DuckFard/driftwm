@@ -146,7 +146,126 @@ impl DriftWm {
         }
 
         self.config = new_config;
+
+        self.apply_output_rules_after_reload();
+
         self.mark_all_dirty();
         tracing::info!("Config reloaded");
+    }
+
+    /// Re-apply per-output rules (mode, scale, transform, position) to existing
+    /// outputs. Mode changes go through `pending_mode_changes` and are picked
+    /// up by the udev backend's render loop; everything else applies in-place
+    /// via `Output::change_current_state`. Uses the same lookup path as
+    /// `create_surface` (`Config::output_config`) so reload and startup compute
+    /// state identically.
+    fn apply_output_rules_after_reload(&mut self) {
+        use driftwm::config::{OutputMode as ConfigOutputMode, OutputPosition};
+        use smithay::utils::Transform;
+
+        let outputs: Vec<smithay::output::Output> = self.space.outputs().cloned().collect();
+        // Track cumulative width for auto-positioning, mirroring `create_surface`'s
+        // algorithm in udev.rs. Outputs processed earlier in iteration order get
+        // smaller x; widths are read post-change_current_state so a scale-change
+        // affects subsequent outputs' auto positions correctly.
+        let mut auto_x: i32 = 0;
+        for output in outputs {
+            let name = output.name();
+            let cfg = self.config.output_config(&name);
+
+            let want_mode = cfg.map(|c| &c.mode).cloned().unwrap_or_default();
+            if let Some(current) = output.current_mode() {
+                let (cur_w, cur_h) = (current.size.w, current.size.h);
+                let cur_hz_milli = current.refresh;
+                let intent = match &want_mode {
+                    ConfigOutputMode::Size(w, h) if (cur_w, cur_h) != (*w, *h) => {
+                        Some(crate::state::ModeIntent::Custom {
+                            w: *w,
+                            h: *h,
+                            refresh_mhz: cur_hz_milli,
+                        })
+                    }
+                    ConfigOutputMode::SizeRefresh(w, h, hz)
+                        if (cur_w, cur_h) != (*w, *h) || cur_hz_milli != *hz as i32 * 1000 =>
+                    {
+                        Some(crate::state::ModeIntent::Custom {
+                            w: *w,
+                            h: *h,
+                            refresh_mhz: *hz as i32 * 1000,
+                        })
+                    }
+                    ConfigOutputMode::Preferred => {
+                        // We don't currently re-modeset when a rule reverts
+                        // to "preferred" — log so the user understands why
+                        // their old custom mode is still active.
+                        tracing::info!(
+                            "Config reload: output '{name}' rule is 'preferred', \
+                             but reverting from a custom mode isn't supported live — \
+                             restart driftwm or replug to apply"
+                        );
+                        None
+                    }
+                    _ => None,
+                };
+                if let Some(intent) = intent {
+                    self.pending_mode_changes.insert(
+                        name.clone(),
+                        crate::state::PendingMode {
+                            intent,
+                            retry_count: 0,
+                        },
+                    );
+                }
+            }
+
+            // Scale: missing field = revert to 1.0 (default).
+            let want_scale = cfg.and_then(|c| c.scale).unwrap_or(1.0);
+            let cur_scale = output.current_scale().fractional_scale();
+            let new_scale = if (cur_scale - want_scale).abs() > f64::EPSILON {
+                Some(smithay::output::Scale::Fractional(want_scale))
+            } else {
+                None
+            };
+
+            // Transform: missing field = revert to Normal.
+            let want_transform = cfg.and_then(|c| c.transform).unwrap_or(Transform::Normal);
+            let new_transform = if output.current_transform() != want_transform {
+                Some(want_transform)
+            } else {
+                None
+            };
+
+            // Position: missing field (or `Auto`) = auto-place by accumulated
+            // width, mirroring `create_surface` in udev.rs.
+            let want_position: smithay::utils::Point<i32, smithay::utils::Logical> =
+                match cfg.map(|c| &c.position) {
+                    Some(OutputPosition::Fixed(x, y)) => (*x, *y).into(),
+                    _ => (auto_x, 0).into(),
+                };
+            let cur_position = crate::state::output_state(&output).layout_position;
+            let new_position = if cur_position != want_position {
+                let mut os = crate::state::output_state(&output);
+                os.layout_position = want_position;
+                Some(want_position)
+            } else {
+                None
+            };
+
+            if new_scale.is_some() || new_transform.is_some() || new_position.is_some() {
+                output.change_current_state(None, new_transform, new_scale, new_position);
+                {
+                    let mut map = smithay::desktop::layer_map_for_output(&output);
+                    map.arrange();
+                }
+                let size = crate::state::output_logical_size(&output);
+                self.resize_fullscreen_for_output(&output, size);
+                self.render.remove_output(&name);
+                self.output_config_dirty = true;
+            }
+
+            // Advance auto_x using the output's *post-change* logical width so
+            // a scale change on one output affects the next output's auto x.
+            auto_x += crate::state::output_logical_size(&output).w;
+        }
     }
 }

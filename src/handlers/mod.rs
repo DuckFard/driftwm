@@ -778,29 +778,112 @@ impl OutputManagementHandler for DriftWm {
     }
 
     fn apply_output_config(&mut self, configs: Vec<RequestedHeadConfig>) -> bool {
+        let is_udev = matches!(self.backend, Some(crate::backend::Backend::Udev(_)));
+
+        // Phase 1: validate everything and stage results. wlr-output-management
+        // Apply is supposed to be all-or-nothing — if any head fails, we
+        // commit nothing.
+        struct Staged {
+            output: smithay::output::Output,
+            output_name: String,
+            mode_intent: Option<crate::state::ModeIntent>,
+            new_transform: Option<smithay::utils::Transform>,
+            new_scale: Option<smithay::output::Scale>,
+            new_position: Option<smithay::utils::Point<i32, smithay::utils::Logical>>,
+        }
+        let mut staged: Vec<Staged> = Vec::with_capacity(configs.len());
+
         for cfg in &configs {
-            let output = self
+            let Some(output) = self
                 .space
                 .outputs()
                 .find(|o| o.name() == cfg.output_name)
-                .cloned();
-            let Some(output) = output else {
+                .cloned()
+            else {
                 return false;
             };
 
-            let current_mode = output.current_mode();
-            let new_transform = cfg.transform.or_else(|| Some(output.current_transform()));
+            if !is_udev && (cfg.mode_index.is_some() || cfg.custom_mode.is_some()) {
+                tracing::warn!(
+                    "Mode change for '{}' ignored: not supported on winit backend",
+                    cfg.output_name
+                );
+                return false;
+            }
+
+            let mut mode_intent: Option<crate::state::ModeIntent> = None;
+            if let Some(idx) = cfg.mode_index {
+                let modes_len = self
+                    .output_management_state
+                    .current_state_for(&cfg.output_name)
+                    .map(|s| s.modes.len())
+                    .unwrap_or(0);
+                if idx >= modes_len {
+                    tracing::warn!(
+                        "Mode index {idx} out of range for '{}' ({modes_len} modes known)",
+                        cfg.output_name
+                    );
+                    return false;
+                }
+                mode_intent = Some(crate::state::ModeIntent::EdidIndex(idx));
+            }
+            if let Some((w, h, refresh_mhz)) = cfg.custom_mode {
+                let ok = (320..=16384).contains(&w)
+                    && (200..=16384).contains(&h)
+                    && (1000..=500_000).contains(&refresh_mhz);
+                if !ok {
+                    tracing::warn!(
+                        "Custom mode {w}x{h}@{refresh_mhz}mHz for '{}' out of bounds",
+                        cfg.output_name
+                    );
+                    return false;
+                }
+                mode_intent = Some(crate::state::ModeIntent::Custom { w, h, refresh_mhz });
+            }
+
+            let new_transform = cfg.transform;
             let new_scale = cfg.scale.map(smithay::output::Scale::Fractional);
+            let new_position = cfg.position.map(|(x, y)| (x, y).into());
 
-            let new_position = cfg.position.map(|(x, y)| {
-                let mut os = crate::state::output_state(&output);
-                os.layout_position = (x, y).into();
-                os.layout_position
+            staged.push(Staged {
+                output,
+                output_name: cfg.output_name.clone(),
+                mode_intent,
+                new_transform,
+                new_scale,
+                new_position,
             });
+        }
 
-            output.change_current_state(current_mode, new_transform, new_scale, new_position);
+        // Phase 2: commit. Validation already succeeded for every head.
+        for s in staged {
+            if let Some(intent) = s.mode_intent {
+                self.pending_mode_changes.insert(
+                    s.output_name.clone(),
+                    crate::state::PendingMode {
+                        intent,
+                        retry_count: 0,
+                    },
+                );
+            }
 
-            self.render.remove_output(&cfg.output_name);
+            if let Some(pos) = s.new_position {
+                let mut os = crate::state::output_state(&s.output);
+                os.layout_position = pos;
+            }
+
+            let new_transform = s.new_transform.or_else(|| Some(s.output.current_transform()));
+            s.output
+                .change_current_state(s.output.current_mode(), new_transform, s.new_scale, s.new_position);
+
+            {
+                let mut map = smithay::desktop::layer_map_for_output(&s.output);
+                map.arrange();
+            }
+            let size = crate::state::output_logical_size(&s.output);
+            self.resize_fullscreen_for_output(&s.output, size);
+
+            self.render.remove_output(&s.output_name);
         }
         self.mark_all_dirty();
         self.output_config_dirty = true;

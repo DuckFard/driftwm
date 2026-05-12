@@ -180,6 +180,31 @@ pub struct DndIcon {
     pub offset: Point<i32, Logical>,
 }
 
+/// A queued mode change with bounded retry count for frame-in-flight deferral.
+#[derive(Clone, Debug)]
+pub struct PendingMode {
+    pub intent: ModeIntent,
+    pub retry_count: u8,
+}
+
+/// What mode the user (config or wlr-output-management client) asked for.
+/// Resolved to a concrete `drm::control::Mode` in the udev backend.
+#[derive(Clone, Debug)]
+pub enum ModeIntent {
+    /// Index into the connector's EDID-advertised modes list. Sent by
+    /// wlr-output-management `SetMode` after the protocol layer chose a
+    /// specific `ZwlrOutputModeV1`.
+    EdidIndex(usize),
+    /// Custom WxH@refresh_mHz. Tried as an exact EDID match first; if not
+    /// found, a CVT modeline is synthesized.
+    Custom { w: i32, h: i32, refresh_mhz: i32 },
+    /// "Whatever the connector says is preferred." Reserved for the
+    /// reload-restores-preferred case; deferred in the v1 reload path
+    /// (we don't currently re-modeset when rule reverts to Preferred).
+    #[allow(dead_code)]
+    Preferred,
+}
+
 /// Per-output viewport state, stored on each `Output` via `UserDataMap`.
 /// Wrapped in `Mutex` since `UserDataMap` requires `Sync`.
 /// Fields that are !Send (PixelShaderElement) stay on DriftWm.
@@ -475,6 +500,12 @@ pub struct DriftWm {
     /// Set when output config was applied via wlr-output-management; render loop
     /// should re-collect output state and notify clients.
     pub output_config_dirty: bool,
+    /// Queued mode-change requests from wlr-output-management Apply or config
+    /// reload. Drained by the udev backend's render loop, which resolves each
+    /// intent to a concrete `control::Mode` and calls `DrmCompositor::use_mode`.
+    /// Keyed by output name (handler doesn't know CRTCs; backend resolves on
+    /// drain).
+    pub pending_mode_changes: HashMap<String, PendingMode>,
 
     // -- global: xwayland-satellite (on-demand X11 socket integration) --
     pub satellite: Option<crate::xwayland::Satellite>,

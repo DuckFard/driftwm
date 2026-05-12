@@ -134,6 +134,21 @@ impl DriftWm {
         self.update_output_from_camera();
     }
 
+    /// Re-configure the fullscreen window (if any) on this output to the new
+    /// viewport size after a mode change. Without this, a fullscreen game
+    /// keeps rendering at the old resolution and leaves a stale strip until
+    /// the client redraws on its own.
+    pub fn resize_fullscreen_for_output(
+        &mut self,
+        output: &smithay::output::Output,
+        new_size: smithay::utils::Size<i32, smithay::utils::Logical>,
+    ) {
+        let Some(fs) = self.fullscreen.get(output) else {
+            return;
+        };
+        fs.window.enter_fullscreen_configure(new_size);
+    }
+
     /// Find which output holds a fullscreen window by its surface.
     pub fn find_fullscreen_output_for_surface(
         &self,

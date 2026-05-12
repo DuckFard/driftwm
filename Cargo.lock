@@ -393,6 +393,7 @@ name = "driftwm"
 version = "0.5.0"
 dependencies = [
  "calloop 0.14.4",
+ "drm-ffi",
  "image",
  "libc",
  "libdisplay-info",

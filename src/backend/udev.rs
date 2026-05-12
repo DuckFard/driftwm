@@ -39,6 +39,7 @@ use smithay::{
 use smithay_drm_extras::drm_scanner::{DrmScanEvent, DrmScanner};
 
 use crate::backend::Backend;
+use crate::backend::cvt;
 use crate::render::OutputRenderElements;
 use crate::state::{DriftWm, init_output_state};
 use driftwm::config::{OutputMode as ConfigOutputMode, OutputPosition};
@@ -124,6 +125,16 @@ pub(crate) fn render_if_needed(device: &UdevDevice, data: &mut DriftWm) {
 
     // 4. Foreign toplevel refresh (once per frame, not per-output)
     crate::render::refresh_foreign_toplevels(data);
+
+    // 4a. Drain queued mode changes before re-notifying clients so the
+    // re-broadcast reflects the new mode state. Mode changes either come from
+    // wlr-output-management Apply or from config reload.
+    if !data.pending_mode_changes.is_empty() {
+        // Borrow-split: iter_mut on `surfaces` reborrows the whole RefMut.
+        // Same pattern as the hotplug callback at line ~527.
+        let DeviceData { drm, surfaces, .. } = &mut *dev;
+        apply_pending_mode_changes(drm, surfaces, data);
+    }
 
     // 4b. Re-notify output management clients after apply_output_config
     if data.output_config_dirty {
@@ -793,13 +804,26 @@ fn pick_preferred_mode(modes: &[control::Mode]) -> Option<control::Mode> {
         .copied()
 }
 
+/// Where a chosen mode came from. `SynthesizedCvt` modes haven't been
+/// validated by the kernel yet — callers should be prepared to retry with
+/// `pick_preferred_mode` if the atomic-test fails.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(crate) enum ModeSource {
+    Edid,
+    SynthesizedCvt,
+}
+
 /// Select a mode based on output config, falling back to preferred.
+/// For `SizeRefresh` rules that don't match any EDID-advertised mode,
+/// synthesize a CVT modeline — this lets users drive CRTs above their
+/// EDID-reported refresh range.
 pub(crate) fn pick_mode_for_config(
     modes: &[control::Mode],
     config: &ConfigOutputMode,
-) -> Option<control::Mode> {
+    connector_name: &str,
+) -> Option<(control::Mode, ModeSource)> {
     match config {
-        ConfigOutputMode::Preferred => pick_preferred_mode(modes),
+        ConfigOutputMode::Preferred => pick_preferred_mode(modes).map(|m| (m, ModeSource::Edid)),
         ConfigOutputMode::Size(w, h) => {
             let matched = modes
                 .iter()
@@ -808,17 +832,64 @@ pub(crate) fn pick_mode_for_config(
             if matched.is_none() {
                 tracing::warn!("No mode matching {w}x{h}, falling back to preferred");
             }
-            matched.copied().or_else(|| pick_preferred_mode(modes))
+            matched
+                .copied()
+                .map(|m| (m, ModeSource::Edid))
+                .or_else(|| pick_preferred_mode(modes).map(|m| (m, ModeSource::Edid)))
         }
         ConfigOutputMode::SizeRefresh(w, h, hz) => {
-            let matched = modes
+            if let Some(m) = modes
                 .iter()
-                .find(|m| m.size() == (*w as u16, *h as u16) && m.vrefresh() == *hz);
-            if matched.is_none() {
-                tracing::warn!("No mode matching {w}x{h}@{hz}Hz, falling back to preferred");
+                .find(|m| m.size() == (*w as u16, *h as u16) && m.vrefresh() == *hz)
+            {
+                return Some((*m, ModeSource::Edid));
             }
-            matched.copied().or_else(|| pick_preferred_mode(modes))
+            tracing::warn!(
+                "Output {connector_name}: mode {w}x{h}@{hz}Hz not in EDID, synthesizing CVT modeline"
+            );
+            match cvt::synth_cvt(*w as u16, *h as u16, *hz) {
+                Ok(raw) => Some((control::Mode::from(raw), ModeSource::SynthesizedCvt)),
+                Err(e) => {
+                    tracing::error!(
+                        "Output {connector_name}: CVT synthesis failed ({e}), falling back to preferred"
+                    );
+                    pick_preferred_mode(modes).map(|m| (m, ModeSource::Edid))
+                }
+            }
         }
+    }
+}
+
+/// Resolve a queued `ModeIntent` to a concrete `control::Mode` for the given
+/// connector. `Custom` first looks for an exact EDID match; only synthesizes
+/// CVT if nothing matches.
+fn resolve_pending_mode(
+    intent: &crate::state::ModeIntent,
+    connector: &connector::Info,
+    connector_name: &str,
+) -> Option<control::Mode> {
+    match intent {
+        crate::state::ModeIntent::EdidIndex(idx) => connector.modes().get(*idx).copied(),
+        crate::state::ModeIntent::Custom { w, h, refresh_mhz } => {
+            let hz = (*refresh_mhz / 1000) as u32;
+            if let Some(m) = connector
+                .modes()
+                .iter()
+                .find(|m| m.size() == (*w as u16, *h as u16) && m.vrefresh() == hz)
+            {
+                return Some(*m);
+            }
+            match cvt::synth_cvt(*w as u16, *h as u16, hz) {
+                Ok(raw) => Some(control::Mode::from(raw)),
+                Err(e) => {
+                    tracing::error!(
+                        "Output {connector_name}: CVT synthesis failed ({e}) for {w}x{h}@{hz}Hz"
+                    );
+                    None
+                }
+            }
+        }
+        crate::state::ModeIntent::Preferred => pick_preferred_mode(connector.modes()),
     }
 }
 
@@ -847,16 +918,31 @@ fn create_surface(
     let config_mode = output_cfg
         .map(|c| &c.mode)
         .unwrap_or(&ConfigOutputMode::Preferred);
-    let mode = pick_mode_for_config(connector.modes(), config_mode)?;
+    let (mode, mode_source) =
+        pick_mode_for_config(connector.modes(), config_mode, &connector_name)?;
     tracing::info!(
-        "Output {connector_name}: mode {}x{}@{}Hz",
+        "Output {connector_name}: mode {}x{}@{}Hz ({:?})",
         mode.size().0,
         mode.size().1,
-        mode.vrefresh()
+        mode.vrefresh(),
+        mode_source,
     );
 
-    let drm_surface = match drm.create_surface(crtc, mode, &[connector.handle()]) {
-        Ok(s) => s,
+    let (drm_surface, mode) = match drm.create_surface(crtc, mode, &[connector.handle()]) {
+        Ok(s) => (s, mode),
+        Err(e) if mode_source == ModeSource::SynthesizedCvt => {
+            tracing::error!(
+                "Output {connector_name}: synthesized CVT mode rejected by kernel ({e}), falling back to preferred"
+            );
+            let fallback = pick_preferred_mode(connector.modes())?;
+            match drm.create_surface(crtc, fallback, &[connector.handle()]) {
+                Ok(s) => (s, fallback),
+                Err(e2) => {
+                    tracing::error!("FAILED: drm.create_surface (preferred fallback): {e2}");
+                    return None;
+                }
+            }
+        }
         Err(e) => {
             tracing::error!("FAILED: drm.create_surface: {e}");
             return None;
@@ -1320,6 +1406,94 @@ fn queue_estimated_vblank_timer(data: &mut DriftWm, output: &Output, crtc: crtc:
 
 use driftwm::protocols::output_management::{ModeInfo, OutputHeadState};
 
+/// Drain `data.pending_mode_changes`, applying each via `DrmCompositor::use_mode`.
+/// Entries for outputs with a frame in flight are deferred (bounded retries) so
+/// we don't modeset on top of an in-progress page flip.
+fn apply_pending_mode_changes(
+    drm: &DrmDevice,
+    surfaces: &mut HashMap<crtc::Handle, SurfaceData>,
+    data: &mut DriftWm,
+) {
+    use smithay::reexports::drm::control::Device as ControlDevice;
+    const MAX_RETRIES: u8 = 3;
+
+    let pending = std::mem::take(&mut data.pending_mode_changes);
+    for (name, mut pm) in pending {
+        let Some((crtc, surface)) = surfaces.iter_mut().find(|(_, s)| s.output.name() == name)
+        else {
+            tracing::warn!("Mode change for '{name}' dropped: output no longer present");
+            continue;
+        };
+
+        // Defer if a page flip is in flight on this CRTC — modesetting on top
+        // of pending frames is undefined behavior.
+        if data.frames_pending.contains(crtc) {
+            if pm.retry_count >= MAX_RETRIES {
+                tracing::error!(
+                    "Mode change for '{name}' dropped after {MAX_RETRIES} deferrals (frames stuck pending)"
+                );
+                continue;
+            }
+            pm.retry_count += 1;
+            data.pending_mode_changes.insert(name, pm);
+            continue;
+        }
+
+        let connector = match ControlDevice::get_connector(drm, surface.connector, false) {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::error!("Mode change for '{name}': get_connector failed: {e}");
+                continue;
+            }
+        };
+
+        let Some(mode) = resolve_pending_mode(&pm.intent, &connector, &name) else {
+            tracing::error!("Mode change for '{name}': could not resolve intent {:?}", pm.intent);
+            continue;
+        };
+
+        match surface.compositor.use_mode(mode) {
+            Ok(_) => {
+                let new_smithay_mode = Mode {
+                    size: (mode.size().0 as i32, mode.size().1 as i32).into(),
+                    refresh: (mode.vrefresh() * 1000) as i32,
+                };
+                surface
+                    .output
+                    .change_current_state(Some(new_smithay_mode), None, None, None);
+                surface.output.set_preferred(new_smithay_mode);
+                // Re-anchor layer surfaces (waybar/mako/swaync) to the new
+                // output dimensions. Without this they keep their old
+                // geometry until the client re-anchors itself.
+                {
+                    let mut map = smithay::desktop::layer_map_for_output(&surface.output);
+                    map.arrange();
+                }
+                // Resize fullscreen window (if any) to the new viewport.
+                let new_size = smithay::utils::Size::from((
+                    mode.size().0 as i32,
+                    mode.size().1 as i32,
+                ));
+                data.resize_fullscreen_for_output(&surface.output, new_size);
+                data.render.remove_output(&name);
+                data.redraws_needed.insert(*crtc);
+                data.output_config_dirty = true;
+                tracing::info!(
+                    "Mode change applied to '{name}': {}x{}@{}Hz",
+                    mode.size().0,
+                    mode.size().1,
+                    mode.vrefresh(),
+                );
+            }
+            Err(e) => {
+                tracing::error!("Mode change rejected by kernel for '{name}': {e:?}");
+                // Re-broadcast so clients see the state didn't actually move.
+                data.output_config_dirty = true;
+            }
+        }
+    }
+}
+
 fn collect_output_state_from_surfaces(
     surfaces: &HashMap<crtc::Handle, SurfaceData>,
     drm: &DrmDevice,
@@ -1334,24 +1508,38 @@ fn collect_output_state_from_surfaces(
         let scale = output.current_scale().fractional_scale();
         let layout_pos = crate::state::output_state(output).layout_position;
 
-        let modes: Vec<ModeInfo> = match ControlDevice::get_connector(drm, surface.connector, false)
-        {
-            Ok(info) => info
-                .modes()
-                .iter()
-                .map(|m| ModeInfo {
-                    width: m.size().0 as i32,
-                    height: m.size().1 as i32,
-                    refresh: (m.vrefresh() as i32) * 1000,
-                    preferred: m.mode_type().contains(control::ModeTypeFlags::PREFERRED),
-                })
-                .collect(),
-            Err(_) => vec![],
-        };
+        let mut modes: Vec<ModeInfo> =
+            match ControlDevice::get_connector(drm, surface.connector, false) {
+                Ok(info) => info
+                    .modes()
+                    .iter()
+                    .map(|m| ModeInfo {
+                        width: m.size().0 as i32,
+                        height: m.size().1 as i32,
+                        refresh: (m.vrefresh() as i32) * 1000,
+                        preferred: m.mode_type().contains(control::ModeTypeFlags::PREFERRED),
+                    })
+                    .collect(),
+                Err(_) => vec![],
+            };
 
-        let current_mode_index = modes.iter().position(|m| {
+        // If the active mode is a CVT-synthesized one (not in the EDID list),
+        // append it so `wlr-randr` can show it as current. Without this the
+        // user runs `wlr-randr --custom-mode ...`, sees the display change,
+        // and then sees the old mode list with nothing marked current — looks
+        // broken.
+        let mut current_mode_index = modes.iter().position(|m| {
             m.width == mode.size.w && m.height == mode.size.h && m.refresh == mode.refresh
         });
+        if current_mode_index.is_none() {
+            modes.push(ModeInfo {
+                width: mode.size.w,
+                height: mode.size.h,
+                refresh: mode.refresh,
+                preferred: false,
+            });
+            current_mode_index = Some(modes.len() - 1);
+        }
 
         let phys = output.physical_properties().size;
         result.insert(

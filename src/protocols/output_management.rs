@@ -92,6 +92,13 @@ pub trait OutputManagementHandler {
 }
 
 impl OutputManagementState {
+    /// Returns the most recently broadcast head state for an output, if any.
+    /// Used by handlers to validate `SetMode` indices against the modes list
+    /// clients were last told about.
+    pub fn current_state_for(&self, output_name: &str) -> Option<&OutputHeadState> {
+        self.current_state.get(output_name)
+    }
+
     pub fn new<D, F>(display: &DisplayHandle, filter: F) -> Self
     where
         D: GlobalDispatch<ZwlrOutputManagerV1, OutputManagementGlobalData>,
@@ -489,11 +496,8 @@ where
                     return;
                 };
 
-                // Reject disable or mode changes (out of scope)
-                let has_unsupported = heads.values().any(|cfg| {
-                    !cfg.enabled || cfg.mode_index.is_some() || cfg.custom_mode.is_some()
-                });
-                if has_unsupported {
+                // Output disable is still out of scope; mode changes go through.
+                if heads.values().any(|cfg| !cfg.enabled) {
                     conf.failed();
                     return;
                 }
@@ -524,10 +528,10 @@ where
                     return;
                 };
 
-                let has_unsupported = heads.values().any(|cfg| {
-                    !cfg.enabled || cfg.mode_index.is_some() || cfg.custom_mode.is_some()
-                });
-                if has_unsupported {
+                // Test reply for mode changes is optimistic — the actual
+                // atomic-test commit happens in the backend, not here. Clients
+                // that need ground truth must observe state changes after Apply.
+                if heads.values().any(|cfg| !cfg.enabled) {
                     conf.failed();
                 } else {
                     conf.succeeded();
