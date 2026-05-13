@@ -1,6 +1,5 @@
 //! VESA CVT modeline synthesis via `libdisplay-info`.
 //!
-//! Thin wrapper around the upstream C library used by wlroots/sway/niri.
 //! Standard CVT (no reduced blanking) is the only variant; reduced blanking
 //! cannot drive CRTs (porches too short for electron-beam retrace) and the
 //! EDID-listed modes already cover modern digital displays. If a future user
@@ -79,7 +78,7 @@ pub fn synth_cvt(w: u16, h: u16, refresh_hz: u32) -> Result<drm_mode_modeinfo, &
 
 /// Pack a mode name into the 32-byte NUL-padded array DRM expects.
 /// `c_char` is `i8` on x86_64 and `u8` on aarch64, so the byte-by-byte
-/// `as _` cast is required (matches niri's `modeinfo_name_slice_from_string`).
+/// `as _` cast is required for portability.
 fn modeinfo_name_slice(name: &str) -> [core::ffi::c_char; 32] {
     let mut out: [core::ffi::c_char; 32] = [0; 32];
     for (dst, src) in zip(&mut out[..31], name.as_bytes()) {
@@ -94,7 +93,7 @@ mod tests {
 
     #[test]
     fn cvt_1920x1080_60_known_clock() {
-        // Cross-checked against `cvt 1920 1080 60` and niri's snapshot test.
+        // Cross-checked against the `cvt 1920 1080 60` reference tool.
         let m = synth_cvt(1920, 1080, 60).unwrap();
         assert_eq!(m.clock, 173_000);
         assert_eq!(m.hdisplay, 1920);

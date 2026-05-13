@@ -682,6 +682,43 @@ impl ScreencopyHandler for DriftWm {
 
 driftwm::delegate_screencopy!(DriftWm);
 
+use driftwm::protocols::output_power::{OutputPowerHandler, OutputPowerState};
+
+impl OutputPowerHandler for DriftWm {
+    fn output_power_state(&mut self) -> &mut OutputPowerState {
+        &mut self.output_power_state
+    }
+
+    fn get_dpms(&mut self, output: &smithay::output::Output) -> Option<bool> {
+        // Winit (nested) doesn't have DPMS — reply `failed` to the client.
+        self.session.as_ref()?;
+        Some(!self.dpms_off_outputs.contains(output))
+    }
+
+    fn set_dpms(&mut self, output: &smithay::output::Output, on: bool) {
+        if self.session.is_none() {
+            return;
+        }
+        let already = !self.dpms_off_outputs.contains(output);
+        if already == on {
+            self.pending_dpms.remove(output);
+            return;
+        }
+        // Reflect the new state immediately so the inline `mode` event the
+        // protocol sends after this call reports the requested state. The
+        // backend transition (compositor.clear / re-schedule render) happens
+        // when the udev render loop drains `pending_dpms`.
+        if on {
+            self.dpms_off_outputs.remove(output);
+        } else {
+            self.dpms_off_outputs.insert(output.clone());
+        }
+        self.pending_dpms.insert(output.clone(), on);
+    }
+}
+
+driftwm::delegate_output_power!(DriftWm);
+
 use smithay::wayland::foreign_toplevel_list::ForeignToplevelHandle;
 use smithay::wayland::image_capture_source::{
     ImageCaptureSource, ImageCaptureSourceHandler, OutputCaptureSourceHandler,

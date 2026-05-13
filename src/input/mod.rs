@@ -23,6 +23,7 @@ use smithay::utils::{Logical, Rectangle};
 use smithay::wayland::compositor::{RegionAttributes, RectangleKind};
 
 use driftwm::canvas::{ScreenPos, screen_to_canvas};
+use driftwm::protocols::output_power::OutputPowerHandler;
 use crate::decorations::DecorationHit;
 use crate::state::{DriftWm, FocusTarget};
 
@@ -52,13 +53,27 @@ fn region_bounding_box(region: &RegionAttributes) -> Rectangle<i32, Logical> {
 }
 
 impl DriftWm {
+    fn wake_dpms_off_outputs(&mut self) {
+        if self.dpms_off_outputs.is_empty() {
+            return;
+        }
+        let outputs: Vec<_> = self.dpms_off_outputs.iter().cloned().collect();
+        for output in outputs {
+            OutputPowerHandler::set_dpms(self, &output, true);
+        }
+    }
+
     /// Process a single input event from any backend (winit, libinput, etc).
     pub fn process_input_event<I: InputBackend>(&mut self, event: InputEvent<I>) {
         self.mark_all_dirty();
 
-        // Notify idle tracker of user activity (skip device add/remove metadata events)
+        // Notify idle tracker of user activity (skip device add/remove metadata events).
+        // Also wake any DPMS-off outputs — without this, recovering from
+        // `wlopm --off` requires a daemon round-trip (swayidle resume command)
+        // and the user perceives a dead-screen frame.
         if !matches!(&event, InputEvent::DeviceAdded { .. } | InputEvent::DeviceRemoved { .. }) {
             self.idle_notifier_state.notify_activity(&self.seat);
+            self.wake_dpms_off_outputs();
         }
 
         // When locked, forward keyboard (VT switch + lock surface input) and

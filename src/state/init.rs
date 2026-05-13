@@ -145,6 +145,11 @@ impl DriftWm {
                 &dh,
                 client_is_unrestricted,
             );
+        let output_power_state =
+            driftwm::protocols::output_power::OutputPowerState::new::<Self, _>(
+                &dh,
+                client_is_unrestricted,
+            );
         let session_lock_manager_state =
             SessionLockManagerState::new::<Self, _>(&dh, client_is_unrestricted);
         let xdg_foreign_state = XdgForeignState::new::<Self>(&dh);
@@ -227,6 +232,9 @@ impl DriftWm {
             foreign_toplevel_list_state,
             screencopy_state,
             output_management_state,
+            output_power_state,
+            dpms_off_outputs: HashSet::new(),
+            pending_dpms: HashMap::new(),
             pending_screencopies: Vec::new(),
             image_capture_source_state,
             output_capture_source_state,

@@ -390,6 +390,14 @@ pub struct DriftWm {
         smithay::wayland::foreign_toplevel_list::ForeignToplevelListState,
     pub screencopy_state: driftwm::protocols::screencopy::ScreencopyManagerState,
     pub output_management_state: driftwm::protocols::output_management::OutputManagementState,
+    pub output_power_state: driftwm::protocols::output_power::OutputPowerState,
+    /// Outputs currently in DPMS off. Render loop skips these; protocol query
+    /// returns this state. Cleared on output disconnect.
+    pub dpms_off_outputs: HashSet<Output>,
+    /// Client-requested DPMS transitions awaiting application in the udev render
+    /// loop (we can't touch the DRM compositor from the wayland dispatch — it
+    /// lives behind an Rc<RefCell<>> in calloop closures).
+    pub pending_dpms: HashMap<Output, bool>,
     pub pending_screencopies: Vec<driftwm::protocols::screencopy::Screencopy>,
     #[allow(dead_code)]
     pub image_capture_source_state: smithay::wayland::image_capture_source::ImageCaptureSourceState,

@@ -89,6 +89,7 @@ pub(crate) fn render_if_needed(device: &UdevDevice, data: &mut DriftWm) {
         && !data.has_active_animations()
         && !data.render.background_is_animated
         && !data.output_config_dirty
+        && data.pending_dpms.is_empty()
     {
         return;
     }
@@ -105,8 +106,42 @@ pub(crate) fn render_if_needed(device: &UdevDevice, data: &mut DriftWm) {
         return;
     }
 
-    // 2. Mark CRTCs dirty for per-output animations
+    // 2. Drain pending DPMS transitions before animation marking so DPMS-off
+    //    outputs don't get re-dirtied below.
+    if !data.pending_dpms.is_empty() {
+        let pending: Vec<(Output, bool)> = data.pending_dpms.drain().collect();
+        for (output, on) in &pending {
+            let Some((&crtc, surface)) =
+                dev.surfaces.iter_mut().find(|(_, s)| s.output == *output)
+            else {
+                continue;
+            };
+            if *on {
+                data.redraws_needed.insert(crtc);
+            } else {
+                if let Err(e) = surface.compositor.clear() {
+                    tracing::warn!(
+                        "DPMS off: compositor.clear failed for '{}': {e:?}",
+                        output.name()
+                    );
+                }
+                data.redraws_needed.remove(&crtc);
+                data.frames_pending.remove(&crtc);
+                if let Some(token) = data.estimated_vblank_timers.remove(&crtc) {
+                    data.loop_handle.remove(token);
+                }
+            }
+        }
+        // Broadcast mode events for client-initiated changes (already sent
+        // inline) plus anything else that drifted; idempotent.
+        driftwm::protocols::output_power::OutputPowerState::refresh(data);
+    }
+
+    // 3. Mark CRTCs dirty for per-output animations
     for (&crtc, surface) in dev.surfaces.iter() {
+        if data.dpms_off_outputs.contains(&surface.output) {
+            continue;
+        }
         if data.output_has_active_animations(&surface.output) {
             data.redraws_needed.insert(crtc);
         }
@@ -148,6 +183,10 @@ pub(crate) fn render_if_needed(device: &UdevDevice, data: &mut DriftWm) {
 
     // 5. Render outputs that need it
     for (&crtc, surface) in dev.surfaces.iter_mut() {
+        if data.dpms_off_outputs.contains(&surface.output) {
+            data.redraws_needed.remove(&crtc);
+            continue;
+        }
         if data.redraws_needed.contains(&crtc) && !data.frames_pending.contains(&crtc) {
             render_frame(data, &mut surface.compositor, &surface.output, crtc);
         }
@@ -514,6 +553,12 @@ pub fn init_udev(
                     for (_, token) in data.estimated_vblank_timers.drain() {
                         data.loop_handle.remove(token);
                     }
+                    // VT switch implicitly wakes the screen. Clear DPMS-off so
+                    // the render loop below actually paints; the daemon will
+                    // re-request off after idle if still applicable.
+                    data.dpms_off_outputs.clear();
+                    data.pending_dpms.clear();
+                    driftwm::protocols::output_power::OutputPowerState::refresh(data);
                     for (&crtc, surface) in dev.surfaces.iter_mut() {
                         if let Err(e) = surface.compositor.reset_state() {
                             tracing::warn!("Failed to reset DRM surface state: {e}");
@@ -696,6 +741,8 @@ pub fn init_udev(
                                             data.render.remove_output(&surface.output.name());
                                             data.fullscreen.remove(&surface.output);
                                             data.lock_surfaces.remove(&surface.output);
+                                            data.dpms_off_outputs.remove(&surface.output);
+                                            data.pending_dpms.remove(&surface.output);
                                         }
                                     }
                                     data.active_crtcs.remove(&crtc);
