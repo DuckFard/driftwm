@@ -16,6 +16,8 @@ fn bare_rule(app_id: Option<&str>, title: Option<&str>) -> WindowRule {
         border_width: None,
         border_color: None,
         border_color_focused: None,
+        corner_radius: None,
+        shadow: None,
     }
 }
 

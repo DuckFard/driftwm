@@ -212,6 +212,8 @@ pub(super) struct WindowRuleFile {
     pub border_width: Option<i32>,
     pub border_color: Option<String>,
     pub border_color_focused: Option<String>,
+    pub corner_radius: Option<i32>,
+    pub shadow: Option<bool>,
 }
 
 #[derive(Deserialize, Default)]

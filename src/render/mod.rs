@@ -233,6 +233,13 @@ pub fn compose_frame(
                 &state.config.decorations,
             )
         };
+        let effective_corner_radius = driftwm::config::effective_corner_radius(
+            applied.as_ref(),
+            effective_mode,
+            &state.config.decorations,
+        );
+        let effective_shadow = !is_fullscreen
+            && driftwm::config::effective_shadow_enabled(applied.as_ref(), effective_mode);
 
         let mut bbox = window.bbox();
         bbox.loc += loc - geom_loc;
@@ -340,7 +347,7 @@ pub fn compose_frame(
             // Window surface elements — only the bottom corners round
             // (the title bar covers the top edge).
             if let Some(ref shader) = state.render.corner_clip_shader {
-                let radius = state.config.decorations.corner_radius as f32;
+                let radius = effective_corner_radius as f32;
                 if radius > 0.0 {
                     let wg = window.geometry();
                     let geometry = Rectangle::new(
@@ -376,7 +383,7 @@ pub fn compose_frame(
                     wl_surface.id(),
                     &shader,
                     inner_logical,
-                    state.config.decorations.corner_radius as f32,
+                    effective_corner_radius as f32,
                     effective_bw,
                     border_color,
                     is_focused,
@@ -391,7 +398,9 @@ pub fn compose_frame(
             // When a border is present, the shadow's footprint and corner
             // radius both grow by border_width so the shadow grades out from
             // the border's outer perimeter (same approach as niri).
-            if let Some(shader) = state.render.shadow_shader.clone() {
+            if effective_shadow
+                && let Some(shader) = state.render.shadow_shader.clone()
+            {
                 let bw = effective_bw as f64;
                 let body_logical: Rectangle<f64, Logical> = Rectangle::new(
                     (render_loc.x - bw, render_loc.y - bar_height as f64 - bw).into(),
@@ -407,7 +416,7 @@ pub fn compose_frame(
                     wl_surface.id(),
                     &shader,
                     body_logical,
-                    (state.config.decorations.corner_radius + effective_bw) as f32,
+                    (effective_corner_radius + effective_bw) as f32,
                     opacity,
                     scale,
                     zoom,
@@ -416,7 +425,7 @@ pub fn compose_frame(
             }
         } else if let Some(ref shader) = state.render.corner_clip_shader {
             let geo = window.geometry();
-            let radius = state.config.decorations.corner_radius as f32;
+            let radius = effective_corner_radius as f32;
 
             // Only `None` mode opts out of shadow + corner clipping.
             // Client (CSD), Minimal, and untagged windows all get the chrome —
@@ -466,7 +475,9 @@ pub fn compose_frame(
                 // Compositor shadow behind CSD windows. Footprint and corner
                 // radius grow by border_width so the shadow grades out from
                 // the border's outer edge instead of the content edge.
-                if let Some(shader) = state.render.shadow_shader.clone() {
+                if effective_shadow
+                    && let Some(shader) = state.render.shadow_shader.clone()
+                {
                     let bw = effective_bw as f64;
                     let body_logical: Rectangle<f64, Logical> = Rectangle::new(
                         (
@@ -486,7 +497,7 @@ pub fn compose_frame(
                         wl_surface.id(),
                         &shader,
                         body_logical,
-                        (state.config.decorations.corner_radius + effective_bw) as f32,
+                        (effective_corner_radius + effective_bw) as f32,
                         opacity,
                         scale,
                         zoom,
@@ -494,12 +505,30 @@ pub fn compose_frame(
                     shadow_count = 1;
                 }
             } else {
-                push_plain_elements(target, elems, zoom);
+                // For a bare window with a non-zero corner radius, the
+                // border/shadow agree on a rounded outline — the surface must
+                // match, or its square corners poke through the border's
+                // inner cutout and the shadow bleeds at those corners.
+                // Fullscreen always uses plain elements (no clip).
+                if bare && !is_fullscreen && effective_corner_radius > 0 {
+                    let geometry = Rectangle::new(
+                        Point::<f64, Logical>::from((
+                            render_loc.x + geo.loc.x as f64,
+                            render_loc.y + geo.loc.y as f64,
+                        )),
+                        Size::<f64, Logical>::from((geom_size.w as f64, geom_size.h as f64)),
+                    );
+                    let r = effective_corner_radius as f32;
+                    push_corner_clipped_elements(
+                        target, elems, shader,
+                        geometry, [r, r, r, r], zoom, output_scale,
+                    );
+                } else {
+                    push_plain_elements(target, elems, zoom);
+                }
                 // decoration = "none" (and not fullscreen) can opt into a
-                // border via a window rule. Straight corners, no shadow.
-                if bare
-                    && !is_fullscreen
-                    && effective_bw > 0
+                // border, rounded corners, or a shadow via window rules.
+                if bare && !is_fullscreen && effective_bw > 0
                     && let Some(border_shader) = state.render.border_shader.clone()
                 {
                     let inner_logical: Rectangle<f64, Logical> = Rectangle::new(
@@ -512,7 +541,7 @@ pub fn compose_frame(
                         wl_surface.id(),
                         &border_shader,
                         inner_logical,
-                        0.0,
+                        effective_corner_radius as f32,
                         effective_bw,
                         border_color,
                         is_focused,
@@ -520,6 +549,35 @@ pub fn compose_frame(
                         scale,
                         zoom,
                     );
+                }
+                if bare && effective_shadow
+                    && let Some(shader) = state.render.shadow_shader.clone()
+                {
+                    let bw = effective_bw as f64;
+                    let body_logical: Rectangle<f64, Logical> = Rectangle::new(
+                        (
+                            render_loc.x + geo.loc.x as f64 - bw,
+                            render_loc.y + geo.loc.y as f64 - bw,
+                        )
+                            .into(),
+                        (
+                            geom_size.w as f64 + 2.0 * bw,
+                            geom_size.h as f64 + 2.0 * bw,
+                        )
+                            .into(),
+                    );
+                    push_shadow_element(
+                        target,
+                        &mut state.render.shadow_cache,
+                        wl_surface.id(),
+                        &shader,
+                        body_logical,
+                        (effective_corner_radius + effective_bw) as f32,
+                        opacity,
+                        scale,
+                        zoom,
+                    );
+                    shadow_count = 1;
                 }
             }
         } else {

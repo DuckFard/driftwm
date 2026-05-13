@@ -195,6 +195,8 @@ pub(super) fn parse_window_rule(r: WindowRuleFile, mod_key: ModKey) -> Option<Wi
             }
             parsed
         }),
+        corner_radius: r.corner_radius.map(|cr| cr.max(0)),
+        shadow: r.shadow,
     })
 }
 

@@ -424,6 +424,16 @@
 #                          [decorations] border_width > 0.
 #   border_color         — per-window unfocused border color hex (e.g. "#5c5c5c").
 #   border_color_focused — per-window focused border color hex.
+#   corner_radius        — per-window corner radius override (px). Overrides
+#                          [decorations] corner_radius for this window. Affects
+#                          content clip, border shape, and shadow. Set on a
+#                          decoration = "none" rule to round the border on a
+#                          widget (content stays unclipped in that mode).
+#   shadow               — per-window shadow toggle. Default is on for client/
+#                          server/minimal modes and off for decoration = "none".
+#                          Set true on a decoration = "none" rule to give a
+#                          widget a shadow, or false on a chrome'd window to
+#                          disable it.
 #   pass_keys  — controls which compositor keybindings are forwarded to the app:
 #                  pass_keys = true           → forward ALL keys (game-friendly)
 #                  pass_keys = ["mod+q",      → forward ONLY these combos; all other

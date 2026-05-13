@@ -8,8 +8,9 @@ Rules are declared as `[[window_rules]]` sections in your config file.
 **All matching rules are applied, not just the first one.** Rules are processed
 in config order and merged together:
 
-- **Scalar fields** (`decoration`, `opacity`, `position`, `size`): last-wins —
-  a later rule overrides an earlier one.
+- **Scalar fields** (`decoration`, `opacity`, `position`, `size`,
+  `border_width`, `border_color`, `border_color_focused`, `corner_radius`,
+  `shadow`): last-wins — a later rule overrides an earlier one.
 - **Boolean flags** (`widget`, `blur`): sticky-on — once set by
   any matching rule, the flag stays set regardless of later rules.
 - **`pass_keys`**: `All` is sticky-on; `Only` lists are unioned across
@@ -67,15 +68,20 @@ Regex patterns use the `regex` crate (RE2-compatible, no backreferences).
 
 ## Effect fields
 
-| Field        | Type                     | Default   | Description                                                                   |
-| ------------ | ------------------------ | --------- | ----------------------------------------------------------------------------- |
-| `position`   | `[x, y]`                 | —         | Place window at canvas coordinates (window center, Y-up)                      |
-| `size`       | `[w, h]`                 | —         | Force window dimensions in pixels                                             |
-| `widget`     | `bool`                   | `false`   | Pin window: immovable, below normal windows, excluded from navigation/alt-tab |
-| `decoration` | string                   | inherited | Override decoration mode (see below)                                          |
-| `blur`       | `bool`                   | `false`   | Blur compositor background behind this window                                 |
-| `opacity`    | `0.0`–`1.0`              | `1.0`     | Window transparency (1.0 = fully opaque)                                      |
-| `pass_keys`  | `bool` or `["combo", …]` | `false`   | Forward keys to the app — see below                                           |
+| Field                  | Type                     | Default   | Description                                                                                                                                              |
+| ---------------------- | ------------------------ | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `position`             | `[x, y]`                 | —         | Place window at canvas coordinates (window center, Y-up)                                                                                                 |
+| `size`                 | `[w, h]`                 | —         | Force window dimensions in pixels                                                                                                                        |
+| `widget`               | `bool`                   | `false`   | Pin window: immovable, below normal windows, excluded from navigation/alt-tab                                                                            |
+| `decoration`           | string                   | inherited | Override decoration mode (see below)                                                                                                                     |
+| `blur`                 | `bool`                   | `false`   | Blur compositor background behind this window                                                                                                            |
+| `opacity`              | `0.0`–`1.0`              | `1.0`     | Window transparency (1.0 = fully opaque)                                                                                                                 |
+| `border_width`         | px                       | inherited | Border width override. Set on a `decoration = "none"` rule to give a widget a border. Set to `0` to disable the border even when global width is `> 0`.  |
+| `border_color`         | `"#rrggbb[aa]"`          | inherited | Per-window unfocused border color                                                                                                                        |
+| `border_color_focused` | `"#rrggbb[aa]"`          | inherited | Per-window focused border color                                                                                                                          |
+| `corner_radius`        | px                       | inherited | Per-window corner radius override. Affects content clip, border shape, and shadow. On `decoration = "none"`, only the border shape uses it.              |
+| `shadow`               | `bool`                   | mode-dep. | Per-window shadow toggle. Default: on for `client`/`server`/`minimal`, off for `none`. Set `true` on `decoration = "none"` to give a widget a shadow.    |
+| `pass_keys`            | `bool` or `["combo", …]` | `false`   | Forward keys to the app — see below                                                                                                                      |
 
 ### `decoration` values
 
@@ -192,6 +198,31 @@ opacity = 0.85       # blur from above is preserved
 [[window_rules]]
 title   = "*nvim*"   # title match narrows to nvim windows only
 opacity = 1.0        # override opacity for nvim (blur still applies)
+```
+
+### Widget with a custom border and shadow
+
+`decoration = "none"` skips all compositor chrome by default. Window rules can
+add it back per-app:
+
+```toml
+[[window_rules]]
+app_id               = "my-clock"
+widget               = true
+decoration           = "none"
+border_width         = 2
+border_color         = "#5c5c5c"
+border_color_focused = "#7aa2f7"
+corner_radius        = 8       # rounded border shape
+shadow               = true    # off by default for decoration = "none"
+```
+
+### Disable shadow on a specific app
+
+```toml
+[[window_rules]]
+app_id = "firefox"
+shadow = false
 ```
 
 ### Suppress iced/libcosmic utility popups

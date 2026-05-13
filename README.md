@@ -123,8 +123,8 @@ path = "~/.config/driftwm/bg.glsl"
 https://github.com/user-attachments/assets/af603001-9f08-4d42-b50a-0342d06e954b
 
 Match windows by `app_id` and/or `title` (glob patterns) and control
-everything: position, size, decoration mode, blur, opacity, pass-through keys, and widget
-behavior. All fields are independent and combine freely.
+everything: position, size, decorations, blur, opacity, pass-through keys, and widget behavior. All
+fields are independent and combine freely.
 
 **Widgets**: set `widget = true` to pin a window in place — immovable, below
 normal windows, excluded from Alt-Tab. Works for both regular windows and

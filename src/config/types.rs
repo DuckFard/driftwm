@@ -553,6 +553,12 @@ pub struct WindowRule {
     pub border_width: Option<i32>,
     pub border_color: Option<[u8; 4]>,
     pub border_color_focused: Option<[u8; 4]>,
+    /// Per-window corner radius override. `None` means inherit the global
+    /// value (or, for `decoration = "none"`, fall through to 0).
+    pub corner_radius: Option<i32>,
+    /// Per-window shadow toggle. `None` means inherit the mode default
+    /// (on for SSD/CSD/minimal, off for `decoration = "none"`).
+    pub shadow: Option<bool>,
 }
 
 impl WindowRule {
@@ -588,6 +594,8 @@ pub struct AppliedWindowRule {
     pub border_width: Option<i32>,
     pub border_color: Option<[u8; 4]>,
     pub border_color_focused: Option<[u8; 4]>,
+    pub corner_radius: Option<i32>,
+    pub shadow: Option<bool>,
 }
 
 impl AppliedWindowRule {
@@ -624,6 +632,12 @@ impl AppliedWindowRule {
         if let Some(bcf) = rule.border_color_focused {
             self.border_color_focused = Some(bcf);
         }
+        if let Some(cr) = rule.corner_radius {
+            self.corner_radius = Some(cr);
+        }
+        if let Some(sh) = rule.shadow {
+            self.shadow = Some(sh);
+        }
     }
 }
 
@@ -640,6 +654,8 @@ impl From<&WindowRule> for AppliedWindowRule {
             border_width: rule.border_width,
             border_color: rule.border_color,
             border_color_focused: rule.border_color_focused,
+            corner_radius: rule.corner_radius,
+            shadow: rule.shadow,
         }
     }
 }
@@ -758,6 +774,35 @@ pub fn effective_border_color_focused(
     applied
         .and_then(|r| r.border_color_focused)
         .unwrap_or(decorations.border_color_focused)
+}
+
+/// Effective corner radius for a window. Per-window rule wins; otherwise fall
+/// back to the global value unless the resolved decoration mode is `None`
+/// (which has straight corners by design).
+pub fn effective_corner_radius(
+    applied: Option<&AppliedWindowRule>,
+    mode: &DecorationMode,
+    decorations: &DecorationConfig,
+) -> i32 {
+    if let Some(cr) = applied.and_then(|r| r.corner_radius) {
+        return cr;
+    }
+    match mode {
+        DecorationMode::None => 0,
+        _ => decorations.corner_radius,
+    }
+}
+
+/// Whether to render the compositor shadow for a window. Per-window rule wins;
+/// otherwise on for modes that draw chrome and off for `decoration = "none"`.
+pub fn effective_shadow_enabled(
+    applied: Option<&AppliedWindowRule>,
+    mode: &DecorationMode,
+) -> bool {
+    if let Some(s) = applied.and_then(|r| r.shadow) {
+        return s;
+    }
+    !matches!(mode, DecorationMode::None)
 }
 
 impl DecorationConfig {
