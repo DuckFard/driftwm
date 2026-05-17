@@ -688,22 +688,39 @@ impl DriftWm {
             root = parent;
         }
 
+        let outputs: Vec<Output> = self.space.outputs().cloned().collect();
+
         if let Some(window) = self
             .space
             .elements()
             .find(|w| w.wl_surface().as_deref() == Some(&root))
             .cloned()
+            && let Some(win_bbox) = self.space.element_bbox(&window)
         {
-            let outputs = self.space.outputs_for_element(&window);
-            if !outputs.is_empty() {
-                for output in outputs {
-                    self.redraws_needed.insert(output);
+            // Test against each output's zoom-aware visible canvas rect rather
+            // than `Space::outputs_for_element`, which uses the cached mode-sized
+            // output geometry and so undercounts at zoom < 1 (window visible only
+            // via zoom-out would be missed) and overcounts at zoom > 1 (harmless).
+            // Use bbox (not geometry) so popups that extend past the toplevel still
+            // damage the right outputs — matches smithay's own refresh semantics.
+            let mut hit_any = false;
+            for output in &outputs {
+                let (cam, zoom) = {
+                    let os = output_state(output);
+                    (os.camera.to_i32_round(), os.zoom)
+                };
+                let viewport = output_logical_size(output);
+                let visible = driftwm::canvas::visible_canvas_rect(cam, viewport, zoom);
+                if visible.overlaps(win_bbox) {
+                    self.redraws_needed.insert(output.clone());
+                    hit_any = true;
                 }
+            }
+            if hit_any {
                 return;
             }
         }
 
-        let outputs: Vec<Output> = self.space.outputs().cloned().collect();
         for output in &outputs {
             let hit = layer_map_for_output(output)
                 .layer_for_surface(&root, WindowSurfaceType::ALL)
