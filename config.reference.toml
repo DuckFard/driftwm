@@ -195,6 +195,21 @@
 # Legacy (still works, prefer the form above):
 # # shader_path = "..."
 # # tile_path   = "..."
+#
+# cache_shader = false
+#   Bake a heavy static shader to a texture once, then pan that — so it pans as
+#   cheaply as an image instead of recomputing every frame.
+#   ONLY correct for shaders that slide rigidly with the camera: u_camera used
+#   once, at full scale, as the only camera term. In GLSL:
+#       vec2 canvas = v_coords * size + u_camera;   // pan shifts the image 1:1
+#   Parallax (u_camera * factor) renders WRONG; animated (u_time) and
+#   zoom-dependent (u_zoom) shaders are never cached and render live.
+#
+# cache_budget_mb = 128
+#   Memory ceiling (MB) shared by cache_shader and gigapixel-TIFF wallpapers,
+#   with LRU eviction. Raise it for sharper revisits on large / HiDPI displays;
+#   lower it on memory-constrained machines (too low just keeps the background
+#   blurrier).
 
 # Keyboard bindings: "Modifier+...+Keysym" = "action [arg]"
 # Merges with defaults. Use "none" to unbind a default binding.
