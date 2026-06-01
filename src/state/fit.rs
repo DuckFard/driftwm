@@ -5,9 +5,9 @@ use smithay::{
     wayland::{compositor::with_states, seat::WaylandFocus},
 };
 
+use super::{DriftWm, PendingRecenter};
 use driftwm::config;
 use driftwm::window_ext::WindowExt;
-use super::{DriftWm, PendingRecenter};
 
 /// Per-window fit state stored in the surface data_map via Mutex.
 /// Some(size) = currently fit, holding the pre-fit size.
@@ -46,7 +46,9 @@ fn snap_rect_at(
 }
 
 pub fn is_fit(window: &Window) -> bool {
-    let Some(wl_surface) = window.wl_surface() else { return false };
+    let Some(wl_surface) = window.wl_surface() else {
+        return false;
+    };
     with_states(&wl_surface, |states| {
         states
             .data_map
@@ -130,11 +132,18 @@ impl DriftWm {
             target_camera.x as i32 + usable.loc.x + gap as i32,
             target_camera.y as i32 + usable.loc.y + gap as i32 + bar,
         ));
-        FitGeometry { new_loc, target_size, target_camera, visual_center }
+        FitGeometry {
+            new_loc,
+            target_size,
+            target_camera,
+            visual_center,
+        }
     }
 
     pub fn fit_window(&mut self, window: &Window) {
-        let Some(wl_surface) = window.wl_surface() else { return };
+        let Some(wl_surface) = window.wl_surface() else {
+            return;
+        };
         if config::applied_rule(&wl_surface).is_some_and(|r| r.widget) {
             return;
         }
@@ -155,8 +164,12 @@ impl DriftWm {
             }
         });
 
-        let FitGeometry { new_loc, target_size, target_camera, visual_center: center } =
-            self.compute_fit_geometry(window);
+        let FitGeometry {
+            new_loc,
+            target_size,
+            target_camera,
+            visual_center: center,
+        } = self.compute_fit_geometry(window);
 
         window.enter_fit_configure(target_size);
         self.space.map_element(window.clone(), new_loc, false);
@@ -178,7 +191,9 @@ impl DriftWm {
     }
 
     pub fn unfit_window(&mut self, window: &Window) {
-        let Some(wl_surface) = window.wl_surface() else { return };
+        let Some(wl_surface) = window.wl_surface() else {
+            return;
+        };
 
         let saved_size = with_states(&wl_surface, |states| {
             let size = states
@@ -282,8 +297,7 @@ impl DriftWm {
         // TL pass: left members shift by `-width_delta`, so width_delta = -dx_left
         // (left edge moves left → dx_left is negative → width_delta positive →
         // left members shift by dx_left). Same reasoning for top.
-        let mut tl =
-            self.cluster_snapshot_for_resize(primary, xdg_toplevel::ResizeEdge::TopLeft);
+        let mut tl = self.cluster_snapshot_for_resize(primary, xdg_toplevel::ResizeEdge::TopLeft);
         tl.apply_member_shifts(
             &mut self.space,
             primary,
@@ -295,11 +309,15 @@ impl DriftWm {
     }
 
     pub fn fit_window_snapped(&mut self, window: &Window) {
-        let Some(wl_surface) = window.wl_surface() else { return };
+        let Some(wl_surface) = window.wl_surface() else {
+            return;
+        };
         if config::applied_rule(&wl_surface).is_some_and(|r| r.widget) {
             return;
         }
-        let Some(old_loc) = self.space.element_location(window) else { return };
+        let Some(old_loc) = self.space.element_location(window) else {
+            return;
+        };
         let old_size = restore_size(&wl_surface).unwrap_or_else(|| window.geometry().size);
         let bar = self.window_ssd_bar(window);
         let bw = self.window_border_width(&wl_surface);
@@ -328,7 +346,9 @@ impl DriftWm {
     }
 
     pub fn unfit_window_snapped(&mut self, window: &Window) {
-        let Some(wl_surface) = window.wl_surface() else { return };
+        let Some(wl_surface) = window.wl_surface() else {
+            return;
+        };
         let saved_size = with_states(&wl_surface, |states| {
             states
                 .data_map
@@ -337,7 +357,9 @@ impl DriftWm {
                 .and_then(|g| g.0)
         });
         let Some(saved_size) = saved_size else { return };
-        let Some(old_loc) = self.space.element_location(window) else { return };
+        let Some(old_loc) = self.space.element_location(window) else {
+            return;
+        };
         let old_size = window.geometry().size;
         let bar = self.window_ssd_bar(window);
         let bw = self.window_border_width(&wl_surface);

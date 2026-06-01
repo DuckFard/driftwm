@@ -172,7 +172,8 @@ pub fn resolve_cluster_shifts(
             for (j, n_entry) in members.iter().enumerate() {
                 let (jdx, jdy) = shifts.get(&j).copied().unwrap_or((0, 0));
                 let n_cur = translate_rect(&n_entry.initial_rect, jdx, jdy);
-                let push = compute_push_from_primary(p_init, p_cur, &n_entry.initial_rect, &n_cur, gap);
+                let push =
+                    compute_push_from_primary(p_init, p_cur, &n_entry.initial_rect, &n_cur, gap);
                 if push != (0, 0) {
                     let new = (jdx + push.0, jdy + push.1);
                     if new != (jdx, jdy) {
@@ -201,8 +202,7 @@ pub fn resolve_cluster_shifts(
                 let n_init = n_entry.initial_rect;
                 let n_cur = translate_rect(&n_init, jdx, jdy);
 
-                let push =
-                    compute_push(&m_init, &m_cur, &n_init, &n_cur, (idx, idy), gap);
+                let push = compute_push(&m_init, &m_cur, &n_init, &n_cur, (idx, idy), gap);
                 if push == (0, 0) {
                     continue;
                 }
@@ -260,36 +260,24 @@ fn compute_push(
 ) -> (i32, i32) {
     let mut push = (0, 0);
 
-    if mdx > 0
-        && n_init.x_low >= m_init.x_high
-        && y_overlap(m_cur, n_cur)
-    {
+    if mdx > 0 && n_init.x_low >= m_init.x_high && y_overlap(m_cur, n_cur) {
         let encroach = m_cur.x_high + gap - n_cur.x_low;
         if encroach > 0.0 {
             push.0 = encroach.ceil() as i32;
         }
-    } else if mdx < 0
-        && n_init.x_high <= m_init.x_low
-        && y_overlap(m_cur, n_cur)
-    {
+    } else if mdx < 0 && n_init.x_high <= m_init.x_low && y_overlap(m_cur, n_cur) {
         let encroach = m_cur.x_low - gap - n_cur.x_high;
         if encroach < 0.0 {
             push.0 = encroach.floor() as i32;
         }
     }
 
-    if mdy > 0
-        && n_init.y_low >= m_init.y_high
-        && x_overlap(m_cur, n_cur)
-    {
+    if mdy > 0 && n_init.y_low >= m_init.y_high && x_overlap(m_cur, n_cur) {
         let encroach = m_cur.y_high + gap - n_cur.y_low;
         if encroach > 0.0 {
             push.1 = encroach.ceil() as i32;
         }
-    } else if mdy < 0
-        && n_init.y_high <= m_init.y_low
-        && x_overlap(m_cur, n_cur)
-    {
+    } else if mdy < 0 && n_init.y_high <= m_init.y_low && x_overlap(m_cur, n_cur) {
         let encroach = m_cur.y_low - gap - n_cur.y_high;
         if encroach < 0.0 {
             push.1 = encroach.floor() as i32;
@@ -352,8 +340,7 @@ where
     W: Clone + Eq + Hash,
 {
     // O(1) rect lookup per popped node — without this BFS goes quadratic.
-    let rects: HashMap<&W, &SnapRect> =
-        windows.iter().map(|(w, r)| (w, r)).collect();
+    let rects: HashMap<&W, &SnapRect> = windows.iter().map(|(w, r)| (w, r)).collect();
 
     let mut visited: HashSet<W> = HashSet::new();
     let mut queue: VecDeque<W> = VecDeque::new();
@@ -531,12 +518,12 @@ mod tests {
         assert_eq!(cluster_of(&"b", &ws, 4.0), HashSet::from(["a", "b", "c"]));
     }
 
-    fn classify(
-        axis_x: Option<Side>,
-        axis_y: Option<Side>,
-        r: SnapRect,
-    ) -> ResizeClassification {
-        ResizeClassification { axis_x, axis_y, initial_rect: r }
+    fn classify(axis_x: Option<Side>, axis_y: Option<Side>, r: SnapRect) -> ResizeClassification {
+        ResizeClassification {
+            axis_x,
+            axis_y,
+            initial_rect: r,
+        }
     }
 
     #[test]
@@ -547,7 +534,7 @@ mod tests {
             classify(Some(Side::Right), None, rect(104.0, 0.0, 100.0, 100.0)),
             classify(Some(Side::Right), None, rect(208.0, 0.0, 100.0, 100.0)),
         ];
-        let (shifts, _) = resolve_cluster_shifts(&members,30, 0, 4.0, &[], None);
+        let (shifts, _) = resolve_cluster_shifts(&members, 30, 0, 4.0, &[], None);
         assert_eq!(shifts.len(), 2);
         assert_eq!(shifts[&0], (30, 0));
         assert_eq!(shifts[&1], (30, 0));
@@ -555,10 +542,12 @@ mod tests {
 
     #[test]
     fn resize_shifts_left_chain_negates_width_delta() {
-        let members = vec![
-            classify(Some(Side::Left), None, rect(-104.0, 0.0, 100.0, 100.0)),
-        ];
-        let (shifts, _) = resolve_cluster_shifts(&members,20, 0, 4.0, &[], None);
+        let members = vec![classify(
+            Some(Side::Left),
+            None,
+            rect(-104.0, 0.0, 100.0, 100.0),
+        )];
+        let (shifts, _) = resolve_cluster_shifts(&members, 20, 0, 4.0, &[], None);
         assert_eq!(shifts[&0], (-20, 0));
     }
 
@@ -568,7 +557,11 @@ mod tests {
             classify(Some(Side::Right), None, rect(104.0, 0.0, 100.0, 100.0)),
             classify(None, None, rect(0.0, 104.0, 100.0, 100.0)),
         ];
-        assert!(resolve_cluster_shifts(&members, 0, 0, 4.0, &[], None).0.is_empty());
+        assert!(
+            resolve_cluster_shifts(&members, 0, 0, 4.0, &[], None)
+                .0
+                .is_empty()
+        );
     }
 
     #[test]
@@ -581,7 +574,7 @@ mod tests {
             classify(None, None, rect(0.0, 0.0, 100.0, 100.0)),
             classify(Some(Side::Right), None, rect(104.0, 0.0, 100.0, 100.0)),
         ];
-        let (shifts, _) = resolve_cluster_shifts(&members,-30, 0, 4.0, &[], None);
+        let (shifts, _) = resolve_cluster_shifts(&members, -30, 0, 4.0, &[], None);
         assert_eq!(shifts[&1], (-30, 0), "E gets the static shift");
         assert_eq!(
             shifts[&0],
@@ -603,7 +596,7 @@ mod tests {
             classify(None, None, rect(44.0, 0.0, 40.0, 40.0)),
             classify(Some(Side::Right), None, rect(88.0, 0.0, 40.0, 40.0)),
         ];
-        let (shifts, _) = resolve_cluster_shifts(&members,-50, 0, 4.0, &[], None);
+        let (shifts, _) = resolve_cluster_shifts(&members, -50, 0, 4.0, &[], None);
         assert_eq!(shifts.len(), 3);
         assert_eq!(shifts[&0], (-50, 0));
         assert_eq!(shifts[&1], (-50, 0));
@@ -619,7 +612,7 @@ mod tests {
             classify(Some(Side::Right), None, rect(104.0, 0.0, 100.0, 100.0)),
             classify(None, None, rect(0.0, 500.0, 100.0, 100.0)),
         ];
-        let (shifts, _) = resolve_cluster_shifts(&members,20, 0, 4.0, &[], None);
+        let (shifts, _) = resolve_cluster_shifts(&members, 20, 0, 4.0, &[], None);
         assert_eq!(shifts.len(), 1);
         assert_eq!(shifts[&0], (20, 0));
         assert!(!shifts.contains_key(&1));
@@ -627,14 +620,12 @@ mod tests {
 
     #[test]
     fn resize_shifts_corner_drag_member_in_both_axes() {
-        let members = vec![
-            classify(
-                Some(Side::Right),
-                Some(Side::Bottom),
-                rect(104.0, 104.0, 100.0, 100.0),
-            ),
-        ];
-        let (shifts, _) = resolve_cluster_shifts(&members,25, 15, 4.0, &[], None);
+        let members = vec![classify(
+            Some(Side::Right),
+            Some(Side::Bottom),
+            rect(104.0, 104.0, 100.0, 100.0),
+        )];
+        let (shifts, _) = resolve_cluster_shifts(&members, 25, 15, 4.0, &[], None);
         assert_eq!(shifts[&0], (25, 15));
     }
 
@@ -652,7 +643,7 @@ mod tests {
             classify(None, None, rect(258.0, 0.0, 100.0, 100.0)),
         ];
 
-        let (shifts, _) = resolve_cluster_shifts(&members,50, 0, 4.0, &[], None);
+        let (shifts, _) = resolve_cluster_shifts(&members, 50, 0, 4.0, &[], None);
         assert_eq!(shifts[&0], (50, 0));
         assert!(
             shifts.get(&1).is_none_or(|s| *s == (0, 0)),
@@ -660,7 +651,7 @@ mod tests {
             shifts.get(&1),
         );
 
-        let (shifts, _) = resolve_cluster_shifts(&members,51, 0, 4.0, &[], None);
+        let (shifts, _) = resolve_cluster_shifts(&members, 51, 0, 4.0, &[], None);
         assert_eq!(shifts[&0], (51, 0));
         assert_eq!(
             shifts[&1],
@@ -684,7 +675,7 @@ mod tests {
             classify(None, None, rect(0.0, 104.0, 100.0, 100.0)),
             classify(Some(Side::Right), None, rect(104.0, 104.0, 100.0, 100.0)),
         ];
-        let (shifts, _) = resolve_cluster_shifts(&members,20, 0, 4.0, &[], None);
+        let (shifts, _) = resolve_cluster_shifts(&members, 20, 0, 4.0, &[], None);
         assert_eq!(shifts[&0], (20, 0), "B shifts right");
         assert!(
             shifts.get(&1).is_none_or(|s| *s == (0, 0)),
@@ -713,7 +704,7 @@ mod tests {
             classify(Some(Side::Left), None, rect(0.0, 0.0, 100.0, 200.0)),
             classify(None, Some(Side::Bottom), rect(104.0, 104.0, 100.0, 96.0)),
         ];
-        let (shifts, _) = resolve_cluster_shifts(&members,-20, -20, 4.0, &[], None);
+        let (shifts, _) = resolve_cluster_shifts(&members, -20, -20, 4.0, &[], None);
         assert_eq!(shifts[&0], (20, 0), "A gets Left-chain static shift");
         assert_eq!(
             shifts[&1],
@@ -742,7 +733,7 @@ mod tests {
             classify(Some(Side::Left), None, rect(0.0, 0.0, 100.0, 400.0)),
             classify(None, Some(Side::Bottom), rect(104.0, 200.0, 100.0, 200.0)),
         ];
-        let (shifts, _) = resolve_cluster_shifts(&members,-30, -50, 4.0, &[], None);
+        let (shifts, _) = resolve_cluster_shifts(&members, -30, -50, 4.0, &[], None);
         assert_eq!(shifts[&0], (30, 0), "A shifts right (Left chain)");
         assert_eq!(
             shifts[&1],
@@ -821,13 +812,15 @@ mod tests {
         // Primary at (0,0)-(100,100), member A at (104,0)-(204,100). Right resize
         // by 50: primary grows to (0,0)-(150,100). A should be pushed right so
         // its left edge stays at primary.x_high + gap = 154.
-        let members = vec![
-            classify(None, None, rect(104.0, 0.0, 100.0, 100.0)),
-        ];
+        let members = vec![classify(None, None, rect(104.0, 0.0, 100.0, 100.0))];
         let p_init = rect(0.0, 0.0, 100.0, 100.0);
         let p_cur = rect(0.0, 0.0, 150.0, 100.0);
         let (shifts, _) = resolve_cluster_shifts(&members, 0, 0, 4.0, &[], Some((p_init, p_cur)));
-        assert_eq!(shifts[&0], (50, 0), "A pushed by 50 to stay flush with grown primary");
+        assert_eq!(
+            shifts[&0],
+            (50, 0),
+            "A pushed by 50 to stay flush with grown primary"
+        );
     }
 
     #[test]
@@ -835,8 +828,8 @@ mod tests {
         // Primary grows right, A is directly to its right, B is to A's right.
         // Primary push at start of cascade loop pushes A; member-vs-member then cascades to B.
         let members = vec![
-            classify(None, None, rect(104.0, 0.0, 40.0, 40.0)),  // A
-            classify(None, None, rect(148.0, 0.0, 40.0, 40.0)),  // B (gap=4 past A)
+            classify(None, None, rect(104.0, 0.0, 40.0, 40.0)), // A
+            classify(None, None, rect(148.0, 0.0, 40.0, 40.0)), // B (gap=4 past A)
         ];
         let p_init = rect(0.0, 0.0, 100.0, 40.0);
         let p_cur = rect(0.0, 0.0, 150.0, 40.0);
@@ -873,12 +866,13 @@ mod tests {
             classify(None, Some(Side::Bottom), rect(104.0, 104.0, 100.0, 100.0)), // D (idx 1)
         ];
         let p_init = rect(104.0, 0.0, 100.0, 100.0);
-        let p_cur  = rect(104.0, 0.0, 100.0, 300.0); // bottom grew by 200
+        let p_cur = rect(104.0, 0.0, 100.0, 300.0); // bottom grew by 200
 
         // Bond (1=D, 0=A): D previously pushed A upward, forming this bond.
         let bonds = vec![(1, 0)];
 
-        let (shifts, _) = resolve_cluster_shifts(&members, 0, 200, 4.0, &bonds, Some((p_init, p_cur)));
+        let (shifts, _) =
+            resolve_cluster_shifts(&members, 0, 200, 4.0, &bonds, Some((p_init, p_cur)));
 
         // D gets static shift +200.
         assert_eq!(shifts[&1], (0, 200), "D shifts down with C's bottom edge");
@@ -925,7 +919,10 @@ mod tests {
         let (shifts2, _) = resolve_cluster_shifts(&members, 200, -60, 4.0, &bonds, None);
         let m_shift = shifts2.get(&0).copied().unwrap_or((0, 0));
         assert_eq!(m_shift.0, -200, "M shifts left by -200");
-        assert_eq!(m_shift.1, 0, "M should have no vertical shift — stale bond must not fire");
+        assert_eq!(
+            m_shift.1, 0,
+            "M should have no vertical shift — stale bond must not fire"
+        );
     }
 
     #[test]

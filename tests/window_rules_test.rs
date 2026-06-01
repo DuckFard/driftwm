@@ -170,7 +170,10 @@ fn pass_keys_all_is_sticky_against_only() {
 #[test]
 fn pass_keys_none_plus_only_becomes_only() {
     let combo = smithay::input::keyboard::Keysym::from(smithay::input::keyboard::keysyms::KEY_q);
-    let c = driftwm::config::KeyCombo { modifiers: driftwm::config::Modifiers::EMPTY, sym: combo };
+    let c = driftwm::config::KeyCombo {
+        modifiers: driftwm::config::Modifiers::EMPTY,
+        sym: combo,
+    };
     let mut base = PassKeys::None;
     base.merge_from(&PassKeys::Only(vec![c]));
     assert!(matches!(base, PassKeys::Only(ref v) if v.len() == 1));
@@ -199,7 +202,10 @@ fn pass_keys_only_union_deduplicates() {
 #[test]
 fn pass_keys_only_plus_none_unchanged() {
     let combo = smithay::input::keyboard::Keysym::from(smithay::input::keyboard::keysyms::KEY_q);
-    let c = driftwm::config::KeyCombo { modifiers: driftwm::config::Modifiers::EMPTY, sym: combo };
+    let c = driftwm::config::KeyCombo {
+        modifiers: driftwm::config::Modifiers::EMPTY,
+        sym: combo,
+    };
     let mut base = PassKeys::Only(vec![c]);
     base.merge_from(&PassKeys::None);
     assert!(matches!(base, PassKeys::Only(ref v) if v.len() == 1));
@@ -208,7 +214,10 @@ fn pass_keys_only_plus_none_unchanged() {
 #[test]
 fn pass_keys_only_plus_all_upgrades_to_all() {
     let combo = smithay::input::keyboard::Keysym::from(smithay::input::keyboard::keysyms::KEY_q);
-    let c = driftwm::config::KeyCombo { modifiers: driftwm::config::Modifiers::EMPTY, sym: combo };
+    let c = driftwm::config::KeyCombo {
+        modifiers: driftwm::config::Modifiers::EMPTY,
+        sym: combo,
+    };
     let mut base = PassKeys::Only(vec![c]);
     base.merge_from(&PassKeys::All);
     assert!(matches!(base, PassKeys::All));
@@ -222,8 +231,14 @@ fn applied_from_toml_rule(r: &WindowRule) -> AppliedWindowRule {
 
 #[test]
 fn applied_rule_bool_flags_are_sticky_on() {
-    let rule_blur = WindowRule { blur: true, ..bare_rule(Some("x"), None) };
-    let rule_no_blur = WindowRule { blur: false, ..bare_rule(Some("x"), None) };
+    let rule_blur = WindowRule {
+        blur: true,
+        ..bare_rule(Some("x"), None)
+    };
+    let rule_no_blur = WindowRule {
+        blur: false,
+        ..bare_rule(Some("x"), None)
+    };
 
     let mut applied = applied_from_toml_rule(&rule_blur);
     assert!(applied.blur);
@@ -255,7 +270,10 @@ fn applied_rule_scalar_not_cleared_by_none() {
         opacity: Some(0.7),
         ..bare_rule(Some("x"), None)
     };
-    let rule2 = WindowRule { opacity: None, ..bare_rule(Some("x"), None) };
+    let rule2 = WindowRule {
+        opacity: None,
+        ..bare_rule(Some("x"), None)
+    };
 
     let mut applied = applied_from_toml_rule(&rule1);
     applied.merge_from(&rule2);
@@ -264,8 +282,14 @@ fn applied_rule_scalar_not_cleared_by_none() {
 
 #[test]
 fn applied_rule_position_last_wins() {
-    let rule1 = WindowRule { position: Some((10, 20)), ..bare_rule(Some("x"), None) };
-    let rule2 = WindowRule { position: Some((30, 40)), ..bare_rule(Some("x"), None) };
+    let rule1 = WindowRule {
+        position: Some((10, 20)),
+        ..bare_rule(Some("x"), None)
+    };
+    let rule2 = WindowRule {
+        position: Some((30, 40)),
+        ..bare_rule(Some("x"), None)
+    };
 
     let mut applied = applied_from_toml_rule(&rule1);
     applied.merge_from(&rule2);

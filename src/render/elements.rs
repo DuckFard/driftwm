@@ -87,10 +87,7 @@ impl TileShaderElement {
     }
 }
 
-fn tile_corner_round(
-    area: Rectangle<i32, Logical>,
-    scale: Scale<f64>,
-) -> Rectangle<i32, Physical> {
+fn tile_corner_round(area: Rectangle<i32, Logical>, scale: Scale<f64>) -> Rectangle<i32, Physical> {
     let x0 = (area.loc.x as f64 * scale.x).round() as i32;
     let y0 = (area.loc.y as f64 * scale.y).round() as i32;
     let x1 = ((area.loc.x + area.size.w) as f64 * scale.x).round() as i32;

@@ -16,14 +16,15 @@ fn get_capture_state<'a>(
     transform: Transform,
     paint_cursors: bool,
 ) -> &'a mut crate::state::CaptureOutputState {
-    map.entry(key.to_owned()).or_insert_with(|| {
-        crate::state::CaptureOutputState {
-            damage_tracker: smithay::backend::renderer::damage::OutputDamageTracker::new(size, scale, transform),
+    map.entry(key.to_owned())
+        .or_insert_with(|| crate::state::CaptureOutputState {
+            damage_tracker: smithay::backend::renderer::damage::OutputDamageTracker::new(
+                size, scale, transform,
+            ),
             offscreen_texture: None,
             age: 0,
             last_paint_cursors: paint_cursors,
-        }
-    })
+        })
 }
 
 /// Fulfill pending screencopy requests by rendering to offscreen textures.
@@ -33,9 +34,9 @@ pub fn render_screencopy(
     output: &Output,
     elements: &[OutputRenderElements],
 ) {
+    use driftwm::protocols::screencopy::ScreencopyBuffer;
     use smithay::backend::renderer::{ExportMem, Renderer};
     use smithay::wayland::shm;
-    use driftwm::protocols::screencopy::ScreencopyBuffer;
     use std::ptr;
 
     // Extract only requests for this output, keep the rest
@@ -68,7 +69,12 @@ pub fn render_screencopy(
         } else {
             elements
                 .iter()
-                .filter(|e| !matches!(e, OutputRenderElements::Cursor(_) | OutputRenderElements::CursorSurface(_)))
+                .filter(|e| {
+                    !matches!(
+                        e,
+                        OutputRenderElements::Cursor(_) | OutputRenderElements::CursorSurface(_)
+                    )
+                })
                 .collect()
         };
 
@@ -88,11 +94,26 @@ pub fn render_screencopy(
             ScreencopyBuffer::Dmabuf(dmabuf) => {
                 let mut dmabuf = dmabuf.clone();
                 let cs = if use_persistent {
-                    Some(get_capture_state(&mut state.render.capture_state, &capture_key, size, scale, transform, paint_cursors))
+                    Some(get_capture_state(
+                        &mut state.render.capture_state,
+                        &capture_key,
+                        size,
+                        scale,
+                        transform,
+                        paint_cursors,
+                    ))
                 } else {
                     None
                 };
-                match render_to_dmabuf(renderer, &mut dmabuf, size, scale, transform, &use_elements, cs) {
+                match render_to_dmabuf(
+                    renderer,
+                    &mut dmabuf,
+                    size,
+                    scale,
+                    transform,
+                    &use_elements,
+                    cs,
+                ) {
                     Ok(sync) => {
                         if let Err(e) = renderer.wait(&sync) {
                             tracing::warn!("screencopy: dmabuf sync wait failed: {e:?}");
@@ -107,11 +128,26 @@ pub fn render_screencopy(
             }
             ScreencopyBuffer::Shm(wl_buffer) => {
                 let cs = if use_persistent {
-                    Some(get_capture_state(&mut state.render.capture_state, &capture_key, size, scale, transform, paint_cursors))
+                    Some(get_capture_state(
+                        &mut state.render.capture_state,
+                        &capture_key,
+                        size,
+                        scale,
+                        transform,
+                        paint_cursors,
+                    ))
                 } else {
                     None
                 };
-                let result = render_to_offscreen(renderer, size, scale, transform, Fourcc::Xrgb8888, &use_elements, cs);
+                let result = render_to_offscreen(
+                    renderer,
+                    size,
+                    scale,
+                    transform,
+                    Fourcc::Xrgb8888,
+                    &use_elements,
+                    cs,
+                );
                 match result {
                     Ok(mapping) => {
                         let copy_ok =
@@ -125,7 +161,11 @@ pub fn render_screencopy(
                                 };
                                 let copy_len = shm_len.min(bytes.len());
                                 unsafe {
-                                    ptr::copy_nonoverlapping(bytes.as_ptr(), shm_buf.cast(), copy_len);
+                                    ptr::copy_nonoverlapping(
+                                        bytes.as_ptr(),
+                                        shm_buf.cast(),
+                                        copy_len,
+                                    );
                                 }
                                 true
                             });
@@ -178,9 +218,9 @@ fn render_to_offscreen(
     elements: &[&OutputRenderElements],
     capture_state: Option<&mut crate::state::CaptureOutputState>,
 ) -> Result<smithay::backend::renderer::gles::GlesMapping, Box<dyn std::error::Error>> {
-    use smithay::backend::renderer::{Bind, ExportMem, Offscreen};
     use smithay::backend::renderer::damage::OutputDamageTracker;
     use smithay::backend::renderer::gles::GlesTexture;
+    use smithay::backend::renderer::{Bind, ExportMem, Offscreen};
 
     let buffer_size = size.to_logical(1).to_buffer(1, Transform::Normal);
     let clear = clear_color_for(format);
@@ -190,7 +230,8 @@ fn render_to_offscreen(
         let tex = match &mut cs.offscreen_texture {
             Some((tex, cached_size)) if *cached_size == size => tex,
             slot => {
-                let new_tex: GlesTexture = Offscreen::<GlesTexture>::create_buffer(renderer, format, buffer_size)?;
+                let new_tex: GlesTexture =
+                    Offscreen::<GlesTexture>::create_buffer(renderer, format, buffer_size)?;
                 *slot = Some((new_tex, size));
                 cs.damage_tracker = OutputDamageTracker::new(size, scale, transform);
                 cs.age = 0;
@@ -200,34 +241,27 @@ fn render_to_offscreen(
 
         {
             let mut target = renderer.bind(tex)?;
-            let _ = cs.damage_tracker.render_output(
-                renderer,
-                &mut target,
-                cs.age,
-                elements,
-                clear,
-            )?;
+            let _ =
+                cs.damage_tracker
+                    .render_output(renderer, &mut target, cs.age, elements, clear)?;
         }
         cs.age += 1;
 
         let target = renderer.bind(tex)?;
-        let mapping = renderer.copy_framebuffer(&target, Rectangle::from_size(buffer_size), format)?;
+        let mapping =
+            renderer.copy_framebuffer(&target, Rectangle::from_size(buffer_size), format)?;
         Ok(mapping)
     } else {
-        let mut texture: GlesTexture = Offscreen::<GlesTexture>::create_buffer(renderer, format, buffer_size)?;
+        let mut texture: GlesTexture =
+            Offscreen::<GlesTexture>::create_buffer(renderer, format, buffer_size)?;
         {
             let mut target = renderer.bind(&mut texture)?;
             let mut damage_tracker = OutputDamageTracker::new(size, scale, transform);
-            let _ = damage_tracker.render_output(
-                renderer,
-                &mut target,
-                0,
-                elements,
-                clear,
-            )?;
+            let _ = damage_tracker.render_output(renderer, &mut target, 0, elements, clear)?;
         }
         let target = renderer.bind(&mut texture)?;
-        let mapping = renderer.copy_framebuffer(&target, Rectangle::from_size(buffer_size), format)?;
+        let mapping =
+            renderer.copy_framebuffer(&target, Rectangle::from_size(buffer_size), format)?;
         Ok(mapping)
     }
 }
@@ -256,26 +290,19 @@ fn render_to_dmabuf(
     let sync = match capture_state {
         Some(cs) => {
             let mut target = renderer.bind(dmabuf)?;
-            let result = cs.damage_tracker.render_output(
-                renderer,
-                &mut target,
-                cs.age,
-                elements,
-                clear,
-            )?.sync;
+            let result = cs
+                .damage_tracker
+                .render_output(renderer, &mut target, cs.age, elements, clear)?
+                .sync;
             cs.age += 1;
             result
         }
         None => {
             let mut target = renderer.bind(dmabuf)?;
             let mut damage_tracker = OutputDamageTracker::new(size, scale, transform);
-            damage_tracker.render_output(
-                renderer,
-                &mut target,
-                0,
-                elements,
-                clear,
-            )?.sync
+            damage_tracker
+                .render_output(renderer, &mut target, 0, elements, clear)?
+                .sync
         }
     };
 
@@ -334,7 +361,12 @@ pub fn render_capture_frames(
         } else {
             elements
                 .iter()
-                .filter(|e| !matches!(e, OutputRenderElements::Cursor(_) | OutputRenderElements::CursorSurface(_)))
+                .filter(|e| {
+                    !matches!(
+                        e,
+                        OutputRenderElements::Cursor(_) | OutputRenderElements::CursorSurface(_)
+                    )
+                })
                 .collect()
         };
 
@@ -354,11 +386,26 @@ pub fn render_capture_frames(
         let ok = if let Ok(dmabuf) = smithay::wayland::dmabuf::get_dmabuf(&capture.buffer) {
             let mut dmabuf = dmabuf.clone();
             let cs = if use_persistent {
-                Some(get_capture_state(&mut state.render.capture_state, &capture_key, capture.buffer_size, scale, Transform::Normal, paint_cursors))
+                Some(get_capture_state(
+                    &mut state.render.capture_state,
+                    &capture_key,
+                    capture.buffer_size,
+                    scale,
+                    Transform::Normal,
+                    paint_cursors,
+                ))
             } else {
                 None
             };
-            match render_to_dmabuf(renderer, &mut dmabuf, capture.buffer_size, scale, Transform::Normal, &use_elements, cs) {
+            match render_to_dmabuf(
+                renderer,
+                &mut dmabuf,
+                capture.buffer_size,
+                scale,
+                Transform::Normal,
+                &use_elements,
+                cs,
+            ) {
                 Ok(sync) => {
                     if let Err(e) = renderer.wait(&sync) {
                         tracing::warn!("capture: dmabuf sync wait failed: {e:?}");
@@ -374,11 +421,26 @@ pub fn render_capture_frames(
             }
         } else {
             let cs = if use_persistent {
-                Some(get_capture_state(&mut state.render.capture_state, &capture_key, capture.buffer_size, scale, Transform::Normal, paint_cursors))
+                Some(get_capture_state(
+                    &mut state.render.capture_state,
+                    &capture_key,
+                    capture.buffer_size,
+                    scale,
+                    Transform::Normal,
+                    paint_cursors,
+                ))
             } else {
                 None
             };
-            let result = render_to_offscreen(renderer, capture.buffer_size, scale, Transform::Normal, Fourcc::Xrgb8888, &use_elements, cs);
+            let result = render_to_offscreen(
+                renderer,
+                capture.buffer_size,
+                scale,
+                Transform::Normal,
+                Fourcc::Xrgb8888,
+                &use_elements,
+                cs,
+            );
             match result {
                 Ok(mapping) => {
                     shm::with_buffer_contents_mut(&capture.buffer, |shm_buf, shm_len, _data| {
@@ -412,10 +474,15 @@ pub fn render_capture_frames(
             let tv_sec_hi = (timestamp.as_secs() >> 32) as u32;
             let tv_sec_lo = (timestamp.as_secs() & 0xFFFFFFFF) as u32;
             let tv_nsec = timestamp.subsec_nanos();
-            capture.frame.presentation_time(tv_sec_hi, tv_sec_lo, tv_nsec);
+            capture
+                .frame
+                .presentation_time(tv_sec_hi, tv_sec_lo, tv_nsec);
             capture.frame.ready();
 
-            let frame_data = capture.frame.data::<std::sync::Mutex<driftwm::protocols::image_copy_capture::CaptureFrameData>>();
+            let frame_data = capture
+                .frame
+                .data::<std::sync::Mutex<driftwm::protocols::image_copy_capture::CaptureFrameData>>(
+                );
             if let Some(fd) = frame_data {
                 let fd = fd.lock().unwrap();
                 state.image_copy_capture_state.frame_done(&fd.session);
@@ -437,10 +504,7 @@ pub fn render_capture_frames(
 /// compositing the cursor onto a window-relative buffer requires intersecting
 /// the cursor position against the captured window's geometry, which isn't
 /// wired in yet. Per-window screencast clients typically don't request it.
-pub fn render_toplevel_captures(
-    state: &mut crate::state::DriftWm,
-    renderer: &mut GlesRenderer,
-) {
+pub fn render_toplevel_captures(state: &mut crate::state::DriftWm, renderer: &mut GlesRenderer) {
     use driftwm::protocols::image_copy_capture::PendingCaptureKind;
     use smithay::backend::renderer::element::Kind;
     use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
@@ -513,9 +577,7 @@ pub fn render_toplevel_captures(
         // tooltips, autocomplete). They aren't part of the toplevel's
         // subsurface tree — without this, captures miss any open menu.
         let mut popup_elems: Vec<WaylandSurfaceRenderElement<GlesRenderer>> = Vec::new();
-        for (popup, popup_offset) in
-            smithay::desktop::PopupManager::popups_for_surface(surface)
-        {
+        for (popup, popup_offset) in smithay::desktop::PopupManager::popups_for_surface(surface) {
             // Popup's geometry origin in capture-buffer space is `popup_offset`
             // (popup is positioned relative to the parent's geometry origin,
             // which we placed at (0,0)). Surface-tree origin is then
@@ -595,9 +657,8 @@ pub fn render_toplevel_captures(
                 &elems_refs,
                 cs,
             ) {
-                Ok(mapping) => shm::with_buffer_contents_mut(
-                    &capture.buffer,
-                    |shm_buf, shm_len, _data| {
+                Ok(mapping) => {
+                    shm::with_buffer_contents_mut(&capture.buffer, |shm_buf, shm_len, _data| {
                         let bytes = match renderer.map_texture(&mapping) {
                             Ok(b) => b,
                             Err(e) => {
@@ -610,9 +671,9 @@ pub fn render_toplevel_captures(
                             ptr::copy_nonoverlapping(bytes.as_ptr(), shm_buf.cast(), copy_len);
                         }
                         true
-                    },
-                )
-                .unwrap_or(false),
+                    })
+                    .unwrap_or(false)
+                }
                 Err(e) => {
                     tracing::warn!("toplevel capture: offscreen render failed: {e:?}");
                     false
@@ -633,9 +694,10 @@ pub fn render_toplevel_captures(
                 .presentation_time(tv_sec_hi, tv_sec_lo, tv_nsec);
             capture.frame.ready();
 
-            let frame_data = capture.frame.data::<std::sync::Mutex<
-                driftwm::protocols::image_copy_capture::CaptureFrameData,
-            >>();
+            let frame_data = capture
+                .frame
+                .data::<std::sync::Mutex<driftwm::protocols::image_copy_capture::CaptureFrameData>>(
+                );
             if let Some(fd) = frame_data {
                 let fd = fd.lock().unwrap();
                 state.image_copy_capture_state.frame_done(&fd.session);

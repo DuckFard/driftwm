@@ -258,10 +258,20 @@ fn parse_continuous_action(s: &str) -> Option<ContinuousAction> {
 fn parse_threshold_action(s: &str) -> Result<Option<ThresholdAction>, String> {
     match s {
         "center-nearest" => Ok(Some(ThresholdAction::CenterNearest)),
-        "center-window" | "focus-center" | "home-toggle" | "zoom-to-fit"
-        | "zoom-to-fit-snapped" | "zoom-in"
-        | "zoom-out" | "zoom-reset" | "toggle-fullscreen" | "fit-window"
-        | "fit-window-snapped" | "reload-config" | "quit" | "close-window" => {
+        "center-window"
+        | "focus-center"
+        | "home-toggle"
+        | "zoom-to-fit"
+        | "zoom-to-fit-snapped"
+        | "zoom-in"
+        | "zoom-out"
+        | "zoom-reset"
+        | "toggle-fullscreen"
+        | "fit-window"
+        | "fit-window-snapped"
+        | "reload-config"
+        | "quit"
+        | "close-window" => {
             let action = parse_action(s)?;
             Ok(Some(ThresholdAction::Fixed(action)))
         }

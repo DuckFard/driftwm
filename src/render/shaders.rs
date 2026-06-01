@@ -105,7 +105,8 @@ fn shadow_uniforms_precise(
     // Shadow post-zoom: independent loc/size rounding (matches RescaleRenderElement
     // wrapping PixelShaderElement whose inner geometry = shadow_area.to_physical_precise_round).
     let shadow_pre: Rectangle<i32, Physical> = shadow_area.to_physical_precise_round(output_scale);
-    let shadow_post: Rectangle<i32, Physical> = shadow_pre.to_f64().upscale(zoom_scale).to_i32_round();
+    let shadow_post: Rectangle<i32, Physical> =
+        shadow_pre.to_f64().upscale(zoom_scale).to_i32_round();
 
     // Linear map: shader-logical pixels → post-zoom physical pixels.
     let phys_w = shadow_post.size.w.max(1) as f64;
@@ -126,23 +127,32 @@ fn shadow_uniforms_precise(
     let corner_logical = corner_radius_phys as f64 / px;
 
     let uniforms = vec![
-        Uniform::new("u_window_rect", (
-            hole_x as f32, hole_y as f32,
-            hole_w as f32, hole_h as f32,
-        )),
+        Uniform::new(
+            "u_window_rect",
+            (hole_x as f32, hole_y as f32, hole_w as f32, hole_h as f32),
+        ),
         Uniform::new("u_radius", shadow_radius),
-        Uniform::new("u_color", (
-            sc[0] as f32 / 255.0, sc[1] as f32 / 255.0,
-            sc[2] as f32 / 255.0, sc[3] as f32 / 255.0,
-        )),
+        Uniform::new(
+            "u_color",
+            (
+                sc[0] as f32 / 255.0,
+                sc[1] as f32 / 255.0,
+                sc[2] as f32 / 255.0,
+                sc[3] as f32 / 255.0,
+            ),
+        ),
         Uniform::new("u_corner_radius", corner_logical as f32),
     ];
 
     let key: ShadowPhysKey = [
-        body_post.loc.x, body_post.loc.y,
-        body_post.loc.x + body_post.size.w, body_post.loc.y + body_post.size.h,
-        shadow_post.loc.x, shadow_post.loc.y,
-        shadow_post.size.w, shadow_post.size.h,
+        body_post.loc.x,
+        body_post.loc.y,
+        body_post.loc.x + body_post.size.w,
+        body_post.loc.y + body_post.size.h,
+        shadow_post.loc.x,
+        shadow_post.loc.y,
+        shadow_post.size.w,
+        shadow_post.size.h,
     ];
 
     (uniforms, key)
@@ -190,7 +200,12 @@ pub(super) fn push_shadow_element(
         body_logical.to_physical_precise_round(output_scale);
     let corner_r_phys = corner_radius_logical * output_scale.x as f32 * zoom as f32;
     let (fresh_uniforms, fresh_key) = shadow_uniforms_precise(
-        body_pre_zoom, shadow_area, output_scale, zoom, shadow_radius, corner_r_phys,
+        body_pre_zoom,
+        shadow_area,
+        output_scale,
+        zoom,
+        shadow_radius,
+        corner_r_phys,
     );
 
     // Alpha is baked into the element at construction; rebuild on opacity change.
@@ -230,10 +245,22 @@ pub(super) fn push_shadow_element(
 const BORDER_SHADER_SRC: &str = include_str!("../shaders/border.glsl");
 
 pub(super) const BORDER_UNIFORMS: &[UniformName<'static>] = &[
-    UniformName { name: Cow::Borrowed("u_inner_rect"), type_: UniformType::_4f },
-    UniformName { name: Cow::Borrowed("u_inner_radius"), type_: UniformType::_1f },
-    UniformName { name: Cow::Borrowed("u_border_width"), type_: UniformType::_1f },
-    UniformName { name: Cow::Borrowed("u_color"), type_: UniformType::_4f },
+    UniformName {
+        name: Cow::Borrowed("u_inner_rect"),
+        type_: UniformType::_4f,
+    },
+    UniformName {
+        name: Cow::Borrowed("u_inner_radius"),
+        type_: UniformType::_1f,
+    },
+    UniformName {
+        name: Cow::Borrowed("u_border_width"),
+        type_: UniformType::_1f,
+    },
+    UniformName {
+        name: Cow::Borrowed("u_color"),
+        type_: UniformType::_4f,
+    },
 ];
 
 pub fn compile_border_shader(renderer: &mut GlesRenderer) -> Option<GlesPixelProgram> {
@@ -265,8 +292,7 @@ fn border_uniforms_precise(
     let zoom_scale = Scale::from(zoom);
 
     let inner_post = corner_round_rect(inner_pre_zoom.to_f64(), zoom_scale);
-    let border_pre: Rectangle<i32, Physical> =
-        border_area.to_physical_precise_round(output_scale);
+    let border_pre: Rectangle<i32, Physical> = border_area.to_physical_precise_round(output_scale);
     let border_post: Rectangle<i32, Physical> =
         border_pre.to_f64().upscale(zoom_scale).to_i32_round();
 
@@ -285,23 +311,37 @@ fn border_uniforms_precise(
     let border_w_logical = border_width_phys as f64 / px;
 
     let uniforms = vec![
-        Uniform::new("u_inner_rect", (
-            inner_x as f32, inner_y as f32,
-            inner_w as f32, inner_h as f32,
-        )),
+        Uniform::new(
+            "u_inner_rect",
+            (
+                inner_x as f32,
+                inner_y as f32,
+                inner_w as f32,
+                inner_h as f32,
+            ),
+        ),
         Uniform::new("u_inner_radius", inner_r_logical as f32),
         Uniform::new("u_border_width", border_w_logical as f32),
-        Uniform::new("u_color", (
-            color[0] as f32 / 255.0, color[1] as f32 / 255.0,
-            color[2] as f32 / 255.0, color[3] as f32 / 255.0,
-        )),
+        Uniform::new(
+            "u_color",
+            (
+                color[0] as f32 / 255.0,
+                color[1] as f32 / 255.0,
+                color[2] as f32 / 255.0,
+                color[3] as f32 / 255.0,
+            ),
+        ),
     ];
 
     let key: BorderPhysKey = [
-        inner_post.loc.x, inner_post.loc.y,
-        inner_post.loc.x + inner_post.size.w, inner_post.loc.y + inner_post.size.h,
-        border_post.loc.x, border_post.loc.y,
-        border_post.size.w, border_post.size.h,
+        inner_post.loc.x,
+        inner_post.loc.y,
+        inner_post.loc.x + inner_post.size.w,
+        inner_post.loc.y + inner_post.size.h,
+        border_post.loc.x,
+        border_post.loc.y,
+        border_post.size.w,
+        border_post.size.h,
         border_width_phys.round() as i32,
         focused as i32,
     ];
@@ -349,8 +389,7 @@ pub(super) fn push_border_element(
     // of the 1-px-vs-2-px asymmetry).
     let total_scale = output_scale.x * zoom;
     let border_w_phys = ((bw as f64) * total_scale).round().max(1.0) as f32;
-    let pad_logical =
-        (((border_w_phys as f64) + 1.0) / total_scale).ceil() as i32;
+    let pad_logical = (((border_w_phys as f64) + 1.0) / total_scale).ceil() as i32;
     let border_area = Rectangle::new(
         Point::<i32, Logical>::from((inner_x - pad_logical, inner_y - pad_logical)),
         Size::<i32, Logical>::from((inner_w + 2 * pad_logical, inner_h + 2 * pad_logical)),
@@ -407,10 +446,22 @@ pub(super) fn push_border_element(
 const CORNER_CLIP_SRC: &str = include_str!("../shaders/corner_clip.glsl");
 
 pub(super) const CORNER_CLIP_UNIFORMS: &[UniformName<'static>] = &[
-    UniformName { name: Cow::Borrowed("aa_scale"), type_: UniformType::_1f },
-    UniformName { name: Cow::Borrowed("geo_size"), type_: UniformType::_2f },
-    UniformName { name: Cow::Borrowed("corner_radius"), type_: UniformType::_4f },
-    UniformName { name: Cow::Borrowed("input_to_geo"), type_: UniformType::Matrix3x3 },
+    UniformName {
+        name: Cow::Borrowed("aa_scale"),
+        type_: UniformType::_1f,
+    },
+    UniformName {
+        name: Cow::Borrowed("geo_size"),
+        type_: UniformType::_2f,
+    },
+    UniformName {
+        name: Cow::Borrowed("corner_radius"),
+        type_: UniformType::_4f,
+    },
+    UniformName {
+        name: Cow::Borrowed("input_to_geo"),
+        type_: UniformType::Matrix3x3,
+    },
 ];
 
 pub fn compile_corner_clip_shader(renderer: &mut GlesRenderer) -> Option<GlesTexProgram> {
@@ -426,9 +477,18 @@ pub fn compile_corner_clip_shader(renderer: &mut GlesRenderer) -> Option<GlesTex
 const TILE_BG_SRC: &str = include_str!("../shaders/tile_bg.glsl");
 
 pub(super) const TILE_BG_UNIFORMS: &[UniformName<'static>] = &[
-    UniformName { name: Cow::Borrowed("u_camera"), type_: UniformType::_2f },
-    UniformName { name: Cow::Borrowed("u_tile_size"), type_: UniformType::_2f },
-    UniformName { name: Cow::Borrowed("u_output_size"), type_: UniformType::_2f },
+    UniformName {
+        name: Cow::Borrowed("u_camera"),
+        type_: UniformType::_2f,
+    },
+    UniformName {
+        name: Cow::Borrowed("u_tile_size"),
+        type_: UniformType::_2f,
+    },
+    UniformName {
+        name: Cow::Borrowed("u_output_size"),
+        type_: UniformType::_2f,
+    },
 ];
 
 pub(super) fn compile_tile_bg_shader(renderer: &mut GlesRenderer) -> Option<GlesTexProgram> {

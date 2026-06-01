@@ -1,12 +1,12 @@
 use smithay::{
     input::pointer::MotionEvent,
-    utils::{Point, Size, SERIAL_COUNTER},
+    utils::{Point, SERIAL_COUNTER, Size},
 };
 
+use crate::state::{DriftWm, FocusTarget, HomeReturn};
 use driftwm::canvas::{self};
 use driftwm::config::Action;
 use driftwm::window_ext::WindowExt;
-use crate::state::{DriftWm, FocusTarget, HomeReturn};
 
 /// Use the focused window as the cone-search origin only when it's fully
 /// inside the viewport. Any clipping → search from viewport center instead
@@ -20,12 +20,17 @@ impl DriftWm {
         // Snapshot fullscreen window before the guard exits it.
         // Also check gesture_exited_fullscreen (set by exit_fullscreen_for_gesture
         // which runs before execute_action in the gesture path).
-        let was_fullscreen = self.active_fullscreen().map(|fs| fs.window.clone())
+        let was_fullscreen = self
+            .active_fullscreen()
+            .map(|fs| fs.window.clone())
             .or_else(|| self.gesture_exited_fullscreen.take());
 
         // Any action except ToggleFullscreen/Spawn/ReloadConfig exits fullscreen first
         if self.is_fullscreen()
-            && !matches!(action, Action::ToggleFullscreen | Action::Spawn(_) | Action::ReloadConfig)
+            && !matches!(
+                action,
+                Action::ToggleFullscreen | Action::Spawn(_) | Action::ReloadConfig
+            )
         {
             self.exit_fullscreen();
         }
@@ -36,10 +41,8 @@ impl DriftWm {
                 tracing::info!("Spawning: {cmd}");
                 crate::state::spawn_command(cmd, &self.config.child_env);
                 let now = std::time::Instant::now();
-                self.cursor.exec_cursor_show_at =
-                    Some(now + std::time::Duration::from_millis(150));
-                self.cursor.exec_cursor_deadline =
-                    Some(now + std::time::Duration::from_secs(5));
+                self.cursor.exec_cursor_show_at = Some(now + std::time::Duration::from_millis(150));
+                self.cursor.exec_cursor_deadline = Some(now + std::time::Duration::from_secs(5));
             }
             Action::Spawn(cmd) => {
                 tracing::info!("Spawning (no cursor): {cmd}");
@@ -173,15 +176,14 @@ impl DriftWm {
                     (NavTarget::Window(w.clone()), point)
                 });
 
-                let anchors = self.config.nav_anchors.iter()
+                let anchors = self
+                    .config
+                    .nav_anchors
+                    .iter()
                     .map(|&p| (NavTarget::Anchor(p), p));
 
-                let nearest = canvas::find_nearest(
-                    origin,
-                    dir,
-                    windows.chain(anchors),
-                    skip.as_ref(),
-                );
+                let nearest =
+                    canvas::find_nearest(origin, dir, windows.chain(anchors), skip.as_ref());
                 match nearest {
                     Some(NavTarget::Window(w)) => {
                         self.navigate_to_window(&w, false);
@@ -235,11 +237,11 @@ impl DriftWm {
 
                 if at_home {
                     // We're at home — return to saved position
-                    let ret = self
-                        .with_output_state(|os| os.home_return.take())
-                        .flatten();
+                    let ret = self.with_output_state(|os| os.home_return.take()).flatten();
                     if let Some(ret) = ret {
-                        let can_fullscreen = ret.fullscreen_window.as_ref()
+                        let can_fullscreen = ret
+                            .fullscreen_window
+                            .as_ref()
                             .is_some_and(|w| self.space.elements().any(|e| e == w));
                         if can_fullscreen {
                             // Set camera/zoom directly — enter_fullscreen locks the viewport
@@ -285,10 +287,7 @@ impl DriftWm {
             Action::GoToPosition(x, y) => {
                 let vc = self.usable_center_screen();
                 let zoom = self.zoom();
-                let target_camera = Point::from((
-                    x - vc.x / zoom,
-                    -y - vc.y / zoom,
-                ));
+                let target_camera = Point::from((x - vc.x / zoom, -y - vc.y / zoom));
                 self.set_overview_return(None);
                 self.set_camera_target(Some(target_camera));
             }
@@ -314,9 +313,11 @@ impl DriftWm {
                         let size = w.geometry().size;
                         (loc, size)
                     });
-                    let anchors = self.config.nav_anchors.iter().map(|p| {
-                        (Point::from((p.x as i32, p.y as i32)), Size::from((0, 0)))
-                    });
+                    let anchors = self
+                        .config
+                        .nav_anchors
+                        .iter()
+                        .map(|p| (Point::from((p.x as i32, p.y as i32)), Size::from((0, 0))));
                     if let Some(bbox) = canvas::all_windows_bbox(windows.chain(anchors)) {
                         self.fit_to_bbox(bbox);
                     }
@@ -331,9 +332,13 @@ impl DriftWm {
                     // interior mutability. Same allow as cluster_snapshot.rs.
                     #[allow(clippy::mutable_key_type)]
                     let cluster = driftwm::layout::cluster::cluster_of(
-                        &focused, &rects, self.config.snap_gap,
+                        &focused,
+                        &rects,
+                        self.config.snap_gap,
                     );
-                    let members = self.space.elements()
+                    let members = self
+                        .space
+                        .elements()
                         .filter(|w| cluster.contains(w))
                         .map(|w| {
                             let loc = self.space.element_location(w).unwrap_or_default();
@@ -419,15 +424,11 @@ impl DriftWm {
     fn fit_to_bbox(&mut self, bbox: smithay::utils::Rectangle<i32, smithay::utils::Logical>) {
         let usable = self.get_usable_area();
         let vc = self.usable_center_screen();
-        let fit_zoom = canvas::zoom_to_fit(
-            bbox, usable.size, self.config.zoom_fit_padding,
-        );
+        let fit_zoom = canvas::zoom_to_fit(bbox, usable.size, self.config.zoom_fit_padding);
         let bbox_cx = bbox.loc.x as f64 + bbox.size.w as f64 / 2.0;
         let bbox_cy = bbox.loc.y as f64 + bbox.size.h as f64 / 2.0;
-        let new_camera: Point<f64, smithay::utils::Logical> = Point::from((
-            bbox_cx - vc.x / fit_zoom,
-            bbox_cy - vc.y / fit_zoom,
-        ));
+        let new_camera: Point<f64, smithay::utils::Logical> =
+            Point::from((bbox_cx - vc.x / fit_zoom, bbox_cy - vc.y / fit_zoom));
         self.set_overview_return(Some((self.camera(), self.zoom())));
         self.set_zoom_animation_center(Some(Point::from((bbox_cx, bbox_cy))));
         self.set_camera_target(Some(new_camera));
@@ -440,13 +441,8 @@ impl DriftWm {
         let vc = self.usable_center_screen();
         let camera = self.camera();
         let zoom = self.zoom();
-        let vc_canvas = Point::from((
-            camera.x + vc.x / zoom,
-            camera.y + vc.y / zoom,
-        ));
-        let new_camera = canvas::zoom_anchor_camera(
-            vc_canvas, vc, target_zoom,
-        );
+        let vc_canvas = Point::from((camera.x + vc.x / zoom, camera.y + vc.y / zoom));
+        let new_camera = canvas::zoom_anchor_camera(vc_canvas, vc, target_zoom);
         self.set_zoom_animation_center(Some(vc_canvas));
         self.set_zoom_target(Some(target_zoom));
         self.set_camera_target(Some(new_camera));

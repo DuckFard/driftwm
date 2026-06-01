@@ -34,7 +34,9 @@ struct SurfaceFrameThrottlingState {
 
 impl Default for SurfaceFrameThrottlingState {
     fn default() -> Self {
-        Self { last_sent_at: std::cell::RefCell::new(None) }
+        Self {
+            last_sent_at: std::cell::RefCell::new(None),
+        }
     }
 }
 
@@ -44,7 +46,9 @@ fn frame_callback_filter<'a>(
 ) -> impl FnMut(
     &smithay::reexports::wayland_server::protocol::wl_surface::WlSurface,
     &smithay::wayland::compositor::SurfaceData,
-) -> Option<Output> + Copy + 'a {
+) -> Option<Output>
++ Copy
++ 'a {
     move |_surface, states| {
         let throttling = states
             .data_map
@@ -70,8 +74,8 @@ pub fn update_primary_scanout_output(
     states: &RenderElementStates,
 ) {
     use smithay::desktop::utils::update_surface_primary_scanout_output;
-    use smithay::wayland::compositor::with_surface_tree_downward;
     use smithay::wayland::compositor::TraversalAction;
+    use smithay::wayland::compositor::with_surface_tree_downward;
 
     for window in state.space.elements() {
         window.with_surfaces(|surface, surface_data| {
@@ -206,39 +210,57 @@ pub fn post_render(state: &mut crate::state::DriftWm, output: &Output) {
         (os.camera, os.zoom)
     };
     let viewport_size = crate::state::output_logical_size(output);
-    let visible_rect = canvas::visible_canvas_rect(
-        camera.to_i32_round(),
-        viewport_size,
-        zoom,
-    );
+    let visible_rect = canvas::visible_canvas_rect(camera.to_i32_round(), viewport_size, zoom);
 
     for window in state.space.elements() {
-        let Some(loc) = state.space.element_location(window) else { continue };
+        let Some(loc) = state.space.element_location(window) else {
+            continue;
+        };
         let geom_loc = window.geometry().loc;
         let mut bbox = window.bbox();
         bbox.loc += loc - geom_loc;
-        if !visible_rect.overlaps(bbox) { continue }
+        if !visible_rect.overlaps(bbox) {
+            continue;
+        }
 
-        window.send_frame(output, time, Some(Duration::ZERO), frame_callback_filter(output, sequence));
+        window.send_frame(
+            output,
+            time,
+            Some(Duration::ZERO),
+            frame_callback_filter(output, sequence),
+        );
     }
 
     // Layer surface frame callbacks
     {
         let layer_map = layer_map_for_output(output);
         for layer_surface in layer_map.layers() {
-            layer_surface.send_frame(output, time, Some(Duration::ZERO), frame_callback_filter(output, sequence));
+            layer_surface.send_frame(
+                output,
+                time,
+                Some(Duration::ZERO),
+                frame_callback_filter(output, sequence),
+            );
         }
     }
 
     // Canvas-positioned layer surface frame callbacks
     for cl in &state.canvas_layers {
-        cl.surface.send_frame(output, time, Some(Duration::ZERO), frame_callback_filter(output, sequence));
+        cl.surface.send_frame(
+            output,
+            time,
+            Some(Duration::ZERO),
+            frame_callback_filter(output, sequence),
+        );
     }
 
     // Cursor surface frame callbacks (animated cursors need these to advance)
     if let CursorImageStatus::Surface(ref surface) = state.cursor.cursor_status {
         smithay::desktop::utils::send_frames_surface_tree(
-            surface, output, time, Some(Duration::ZERO),
+            surface,
+            output,
+            time,
+            Some(Duration::ZERO),
             frame_callback_filter(output, sequence),
         );
     }

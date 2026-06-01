@@ -67,8 +67,14 @@ impl WindowDecoration {
         self.fonts_ready = fonts_ready;
         self.title.clear();
         self.title.push_str(title);
-        self.title_bar =
-            render_title_bar(width, focused, self.close_hovered, scale, &self.title, config);
+        self.title_bar = render_title_bar(
+            width,
+            focused,
+            self.close_hovered,
+            scale,
+            &self.title,
+            config,
+        );
         true
     }
 }
@@ -435,7 +441,12 @@ mod tests {
     #[test]
     fn title_bar_contains_point_right_of_bar_body_returns_false() {
         let bar_right = 0.0 + 400.0 - 25.0 - PAD as f64;
-        assert!(!title_bar_contains(pt(bar_right, 80.0), loc(0, 100), 400, 25));
+        assert!(!title_bar_contains(
+            pt(bar_right, 80.0),
+            loc(0, 100),
+            400,
+            25
+        ));
     }
 
     #[test]
@@ -445,17 +456,32 @@ mod tests {
 
     #[test]
     fn close_button_contains_point_in_bar_body_returns_false() {
-        assert!(!close_button_contains(pt(100.0, 80.0), loc(0, 100), 400, 25));
+        assert!(!close_button_contains(
+            pt(100.0, 80.0),
+            loc(0, 100),
+            400,
+            25
+        ));
     }
 
     #[test]
     fn close_button_contains_point_above_bar_returns_false() {
-        assert!(!close_button_contains(pt(370.0, 74.0), loc(0, 100), 400, 25));
+        assert!(!close_button_contains(
+            pt(370.0, 74.0),
+            loc(0, 100),
+            400,
+            25
+        ));
     }
 
     #[test]
     fn close_button_contains_point_below_bar_returns_false() {
-        assert!(!close_button_contains(pt(370.0, 100.0), loc(0, 100), 400, 25));
+        assert!(!close_button_contains(
+            pt(370.0, 100.0),
+            loc(0, 100),
+            400,
+            25
+        ));
     }
 
     #[test]

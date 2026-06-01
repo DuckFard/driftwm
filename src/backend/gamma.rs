@@ -90,7 +90,11 @@ impl GammaProps {
         let blob_id = if let Some(gamma) = gamma {
             let size = self.gamma_size(drm)? as usize;
             if gamma.len() != size * 3 {
-                tracing::warn!("wrong gamma length: got {}, expected {}", gamma.len(), size * 3);
+                tracing::warn!(
+                    "wrong gamma length: got {}, expected {}",
+                    gamma.len(),
+                    size * 3
+                );
                 return None;
             }
             let (red, rest) = gamma.split_at(size);
@@ -113,9 +117,11 @@ impl GammaProps {
         };
 
         let raw_id = blob_id.map(NonZeroU64::get).unwrap_or(0);
-        if let Err(e) =
-            drm.set_property(self.crtc, self.gamma_lut, property::Value::Blob(raw_id).into())
-        {
+        if let Err(e) = drm.set_property(
+            self.crtc,
+            self.gamma_lut,
+            property::Value::Blob(raw_id).into(),
+        ) {
             tracing::warn!("failed to set GAMMA_LUT property: {e:?}");
             if raw_id != 0 {
                 let _ = drm_ffi::mode::destroy_property_blob(drm.as_fd(), raw_id as u32);

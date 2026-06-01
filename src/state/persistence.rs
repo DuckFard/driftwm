@@ -56,20 +56,19 @@ impl DriftWm {
             let Some(surface) = window.wl_surface() else {
                 continue;
             };
-            let (app_id, title) =
-                smithay::wayland::compositor::with_states(&surface, |states| {
-                    states
-                        .data_map
-                        .get::<smithay::wayland::shell::xdg::XdgToplevelSurfaceData>()
-                        .and_then(|d| d.lock().ok())
-                        .map(|g| {
-                            (
-                                g.app_id.clone().unwrap_or_default(),
-                                g.title.clone().unwrap_or_default(),
-                            )
-                        })
-                        .unwrap_or_default()
-                });
+            let (app_id, title) = smithay::wayland::compositor::with_states(&surface, |states| {
+                states
+                    .data_map
+                    .get::<smithay::wayland::shell::xdg::XdgToplevelSurfaceData>()
+                    .and_then(|d| d.lock().ok())
+                    .map(|g| {
+                        (
+                            g.app_id.clone().unwrap_or_default(),
+                            g.title.clone().unwrap_or_default(),
+                        )
+                    })
+                    .unwrap_or_default()
+            });
             if app_id.is_empty() {
                 continue;
             }

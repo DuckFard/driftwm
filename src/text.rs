@@ -62,7 +62,10 @@ pub fn fonts_ready() -> bool {
 /// Run `f` with the shared `FontSystem`, or `None` if the background scan hasn't
 /// finished — callers degrade to empty output rather than block.
 fn with_font_system<R>(f: impl FnOnce(&mut FontSystem) -> R) -> Option<R> {
-    let mut fs = FONT_SYSTEM.get()?.lock().expect("font system mutex poisoned");
+    let mut fs = FONT_SYSTEM
+        .get()?
+        .lock()
+        .expect("font system mutex poisoned");
     Some(f(&mut fs))
 }
 
@@ -104,7 +107,13 @@ fn weight_of(weight: FontWeight) -> Weight {
 }
 
 /// Shape `text` as a single unwrapped line.
-fn shape_line(fs: &mut FontSystem, text: &str, font: &str, size: f32, weight: FontWeight) -> Buffer {
+fn shape_line(
+    fs: &mut FontSystem,
+    text: &str,
+    font: &str,
+    size: f32,
+    weight: FontWeight,
+) -> Buffer {
     let mut buffer = Buffer::new(fs, Metrics::new(size, size * 1.25));
     buffer.set_wrap(fs, Wrap::None);
     // No width constraint → never wraps; generous height fits the single line.
@@ -202,8 +211,7 @@ pub fn rasterize_into(
                 .and_then(|lines| lines.first())
                 .map(|line| (line.max_ascent, line.max_descent))
                 .unwrap_or((size * 0.8, size * 0.2));
-            let baseline =
-                ((buf_h as f32 - (ascent + descent)) / 2.0 + ascent).round() as i32;
+            let baseline = ((buf_h as f32 - (ascent + descent)) / 2.0 + ascent).round() as i32;
             for run in buffer.layout_runs() {
                 for glyph in run.glyphs {
                     let pg = glyph.physical((origin_x as f32, baseline as f32), 1.0);

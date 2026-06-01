@@ -34,7 +34,7 @@ pub fn unset_tiled_states(toplevel: &ToplevelSurface) {
 /// Wire-protocol mode for clients. Anything non-Client → SSD on the wire.
 pub fn decoration_mode_to_wire(
     mode: &crate::config::DecorationMode,
-) -> smithay::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1::Mode {
+) -> smithay::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1::Mode{
     use smithay::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1::Mode;
     match mode {
         crate::config::DecorationMode::Client => Mode::ClientSide,
@@ -97,7 +97,9 @@ impl WindowExt for Window {
     }
 
     fn enter_fullscreen_configure(&self, size: Size<i32, Logical>) {
-        let Some(toplevel) = self.toplevel() else { return };
+        let Some(toplevel) = self.toplevel() else {
+            return;
+        };
         use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
         toplevel.with_pending_state(|state| {
             state.states.set(xdg_toplevel::State::Fullscreen);
@@ -107,7 +109,9 @@ impl WindowExt for Window {
     }
 
     fn exit_fullscreen_configure(&self, saved_size: Size<i32, Logical>) {
-        let Some(toplevel) = self.toplevel() else { return };
+        let Some(toplevel) = self.toplevel() else {
+            return;
+        };
         use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
         // Keep Tiled, send saved_size explicitly. See exit_fit_configure.
         toplevel.with_pending_state(|state| {
@@ -118,7 +122,9 @@ impl WindowExt for Window {
     }
 
     fn enter_fit_configure(&self, size: Size<i32, Logical>) {
-        let Some(toplevel) = self.toplevel() else { return };
+        let Some(toplevel) = self.toplevel() else {
+            return;
+        };
         use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
         toplevel.with_pending_state(|state| {
             state.states.set(xdg_toplevel::State::Maximized);
@@ -128,7 +134,9 @@ impl WindowExt for Window {
     }
 
     fn exit_fit_configure(&self, saved_size: Size<i32, Logical>) {
-        let Some(toplevel) = self.toplevel() else { return };
+        let Some(toplevel) = self.toplevel() else {
+            return;
+        };
         use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
         // Keep Tiled set so GTK/Chromium suppress CSD (otherwise repeated
         // toggles shrink the window). Send saved_size explicitly so SCTK
@@ -152,13 +160,18 @@ impl WindowExt for Window {
     }
 
     fn is_modal(&self) -> bool {
-        let Some(toplevel) = self.toplevel() else { return false };
+        let Some(toplevel) = self.toplevel() else {
+            return false;
+        };
         smithay::wayland::compositor::with_states(toplevel.wl_surface(), |states| {
             states
                 .data_map
                 .get::<smithay::wayland::shell::xdg::XdgToplevelSurfaceData>()
                 .and_then(|d| d.lock().ok())
-                .is_some_and(|guard| guard.dialog_hint == smithay::wayland::shell::xdg::dialog::ToplevelDialogHint::Modal)
+                .is_some_and(|guard| {
+                    guard.dialog_hint
+                        == smithay::wayland::shell::xdg::dialog::ToplevelDialogHint::Modal
+                })
         })
     }
 

@@ -141,8 +141,7 @@ impl TiffSource {
                 let dst_x_px = (tx_off * tile_w) as usize;
                 let dst_y_px = (ty_off * tile_h) as usize;
                 for row in 0..actual_h as usize {
-                    let dst_start =
-                        (dst_y_px + row) * stitched_row_stride + dst_x_px * 4;
+                    let dst_start = (dst_y_px + row) * stitched_row_stride + dst_x_px * 4;
                     let src_start = row * src_row_stride;
                     stitched[dst_start..dst_start + src_row_stride]
                         .copy_from_slice(&rgba[src_start..src_start + src_row_stride]);
@@ -198,9 +197,7 @@ impl TiffSource {
                 let raw = match chunk {
                     DecodingResult::U8(v) => v,
                     other => {
-                        tracing::warn!(
-                            "LOD {lod} tile ({cx},{cy}) non-u8 sample type: {other:?}"
-                        );
+                        tracing::warn!("LOD {lod} tile ({cx},{cy}) non-u8 sample type: {other:?}");
                         failed += 1;
                         continue;
                     }
@@ -365,7 +362,10 @@ mod tests {
 
     fn tmp_path(name: &str) -> PathBuf {
         let mut p = std::env::temp_dir();
-        p.push(format!("driftwm-tiff-test-{}-{name}.tif", std::process::id()));
+        p.push(format!(
+            "driftwm-tiff-test-{}-{name}.tif",
+            std::process::id()
+        ));
         p
     }
 

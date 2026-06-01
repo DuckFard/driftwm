@@ -83,7 +83,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .skip_while(|a| a != "--backend")
         .nth(1)
         .unwrap_or_else(|| {
-            if std::env::var_os("WAYLAND_DISPLAY").is_some() || std::env::var_os("DISPLAY").is_some() {
+            if std::env::var_os("WAYLAND_DISPLAY").is_some()
+                || std::env::var_os("DISPLAY").is_some()
+            {
                 "winit".to_string()
             } else {
                 "udev".to_string()
@@ -97,8 +99,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // the same clean exit as the Quit keybind.
     signals::listen(&event_loop.handle());
 
-    let display =
-        smithay::reexports::wayland_server::Display::<DriftWm>::new()?;
+    let display = smithay::reexports::wayland_server::Display::<DriftWm>::new()?;
 
     let mut data = DriftWm::new(
         display.handle(),
@@ -121,14 +122,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         smithay::reexports::calloop::Interest::READ,
         smithay::reexports::calloop::Mode::Level,
     );
-    event_loop.handle().insert_source(display_source, |_, display, data: &mut DriftWm| {
-        // SAFETY: Display is never dropped while the Generic source is alive.
-        unsafe { display.get_mut() }.dispatch_clients(data).ok();
-        Ok(smithay::reexports::calloop::PostAction::Continue)
-    })?;
+    event_loop
+        .handle()
+        .insert_source(display_source, |_, display, data: &mut DriftWm| {
+            // SAFETY: Display is never dropped while the Generic source is alive.
+            unsafe { display.get_mut() }.dispatch_clients(data).ok();
+            Ok(smithay::reexports::calloop::PostAction::Continue)
+        })?;
 
-    let listening_socket =
-        smithay::wayland::socket::ListeningSocketSource::new_auto()?;
+    let listening_socket = smithay::wayland::socket::ListeningSocketSource::new_auto()?;
     let socket_name = listening_socket
         .socket_name()
         .to_string_lossy()
@@ -205,24 +207,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let timer = smithay::reexports::calloop::timer::Timer::from_duration(
             std::time::Duration::from_millis(500),
         );
-        event_loop.handle().insert_source(timer, move |_, _, data: &mut DriftWm| {
-            let current_mtime = std::fs::metadata(&config_path)
-                .and_then(|m| m.modified())
-                .ok();
-            if current_mtime != data.config_file_mtime && current_mtime.is_some() {
-                // Debounce: skip if <100ms old (editor may still be writing).
-                let dominated_by_recent_write = current_mtime.is_some_and(|mt| {
-                    mt.elapsed().is_ok_and(|age| age.as_millis() < 100)
-                });
-                if !dominated_by_recent_write {
-                    data.config_file_mtime = current_mtime;
-                    data.reload_config();
+        event_loop
+            .handle()
+            .insert_source(timer, move |_, _, data: &mut DriftWm| {
+                let current_mtime = std::fs::metadata(&config_path)
+                    .and_then(|m| m.modified())
+                    .ok();
+                if current_mtime != data.config_file_mtime && current_mtime.is_some() {
+                    // Debounce: skip if <100ms old (editor may still be writing).
+                    let dominated_by_recent_write = current_mtime
+                        .is_some_and(|mt| mt.elapsed().is_ok_and(|age| age.as_millis() < 100));
+                    if !dominated_by_recent_write {
+                        data.config_file_mtime = current_mtime;
+                        data.reload_config();
+                    }
                 }
-            }
-            smithay::reexports::calloop::timer::TimeoutAction::ToDuration(
-                std::time::Duration::from_millis(500),
-            )
-        })?;
+                smithay::reexports::calloop::timer::TimeoutAction::ToDuration(
+                    std::time::Duration::from_millis(500),
+                )
+            })?;
     }
 
     // After WAYLAND_DISPLAY is set so satellite can connect as a Wayland client.

@@ -4,23 +4,23 @@ use crate::grabs::{ResizeState, has_left, has_top};
 use crate::handlers::layer_shell::LayerDestroyedMarker;
 use crate::state::{ClientState, DriftWm, FocusTarget, PendingRecenter};
 use driftwm::window_ext::WindowExt;
-use smithay::utils::Rectangle;
 use smithay::desktop::layer_map_for_output;
+use smithay::utils::Rectangle;
 use smithay::wayland::shell::wlr_layer::{
-    Anchor, KeyboardInteractivity, LayerSurfaceData, LayerSurfaceCachedState,
+    Anchor, KeyboardInteractivity, LayerSurfaceCachedState, LayerSurfaceData,
 };
 use smithay::{
     delegate_compositor, delegate_shm,
     reexports::{
         calloop::Interest,
-        wayland_server::{Resource, protocol::wl_buffer::WlBuffer, Client},
+        wayland_server::{Client, Resource, protocol::wl_buffer::WlBuffer},
     },
     wayland::{
         buffer::BufferHandler,
         compositor::{
-            add_blocker, add_pre_commit_hook, get_parent, is_sync_subsurface, with_states,
             BufferAssignment, CompositorClientState, CompositorHandler, CompositorState,
-            RectangleKind, SurfaceAttributes,
+            RectangleKind, SurfaceAttributes, add_blocker, add_pre_commit_hook, get_parent,
+            is_sync_subsurface, with_states,
         },
         dmabuf::get_dmabuf,
         seat::WaylandFocus,
@@ -41,7 +41,10 @@ impl CompositorHandler for DriftWm {
             .compositor_state
     }
 
-    fn destroyed(&mut self, surface: &smithay::reexports::wayland_server::protocol::wl_surface::WlSurface) {
+    fn destroyed(
+        &mut self,
+        surface: &smithay::reexports::wayland_server::protocol::wl_surface::WlSurface,
+    ) {
         // Safety net for crash path — toplevel_destroyed handles normal xdg
         // shutdown, but a client crash destroys wl_surface without it.
         let id = surface.id();
@@ -51,16 +54,19 @@ impl CompositorHandler for DriftWm {
         self.auto_anchor_snapshot.remove(surface);
         // Drop snapshots pointing at the destroyed surface as their anchor.
         // Keep `None`-anchor entries (user had no focus — unrelated).
-        self.auto_anchor_snapshot.retain(|_, anchor| match anchor.as_ref() {
-            None => true,
-            Some(w) => w.wl_surface().is_some_and(|s| &*s != surface),
-        });
+        self.auto_anchor_snapshot
+            .retain(|_, anchor| match anchor.as_ref() {
+                None => true,
+                Some(w) => w.wl_surface().is_some_and(|s| &*s != surface),
+            });
         self.render.blur_cache.remove(&id);
         self.render.shadow_cache.remove(&id);
         self.render.border_cache.remove(&id);
         // lock_surfaces is keyed by output — sweep values.
-        self.lock_surfaces.retain(|_, ls| ls.wl_surface() != surface);
-        self.focus_history.retain(|w| w.wl_surface().as_deref() != Some(surface));
+        self.lock_surfaces
+            .retain(|_, ls| ls.wl_surface() != surface);
+        self.focus_history
+            .retain(|w| w.wl_surface().as_deref() != Some(surface));
         if self.cycle_state.is_some() {
             if self.focus_history.is_empty() {
                 self.cycle_state = None;
@@ -70,13 +76,20 @@ impl CompositorHandler for DriftWm {
         }
     }
 
-    fn new_surface(&mut self, surface: &smithay::reexports::wayland_server::protocol::wl_surface::WlSurface) {
+    fn new_surface(
+        &mut self,
+        surface: &smithay::reexports::wayland_server::protocol::wl_surface::WlSurface,
+    ) {
         // Registered before get_layer_surface installs smithay's validation
         // hook, so this fires first. For destroyed layer surfaces, sets full
         // anchors so size validation passes on the orphaned final commit.
         add_pre_commit_hook::<DriftWm, _>(surface, |_state, _dh, surface| {
             with_states(surface, |states| {
-                if states.data_map.get::<LayerDestroyedMarker>().is_some_and(|m| m.0.load(std::sync::atomic::Ordering::Relaxed)) {
+                if states
+                    .data_map
+                    .get::<LayerDestroyedMarker>()
+                    .is_some_and(|m| m.0.load(std::sync::atomic::Ordering::Relaxed))
+                {
                     let mut guard = states.cached_state.get::<LayerSurfaceCachedState>();
                     guard.pending().anchor =
                         Anchor::TOP | Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT;
@@ -101,8 +114,12 @@ impl CompositorHandler for DriftWm {
                     })
             });
             let Some(dmabuf) = maybe_dmabuf else { return };
-            let Ok((blocker, source)) = dmabuf.generate_blocker(Interest::READ) else { return };
-            let Some(client) = surface.client() else { return };
+            let Ok((blocker, source)) = dmabuf.generate_blocker(Interest::READ) else {
+                return;
+            };
+            let Some(client) = surface.client() else {
+                return;
+            };
             let inserted = state
                 .loop_handle
                 .insert_source(source, move |_, _, data: &mut DriftWm| {
@@ -119,7 +136,10 @@ impl CompositorHandler for DriftWm {
         });
     }
 
-    fn commit(&mut self, surface: &smithay::reexports::wayland_server::protocol::wl_surface::WlSurface) {
+    fn commit(
+        &mut self,
+        surface: &smithay::reexports::wayland_server::protocol::wl_surface::WlSurface,
+    ) {
         // Per-surface damage; global dirty would force every CRTC to redraw
         // on every commit and defeat the per-output damage tracker.
         self.mark_dirty_for_surface(surface);
@@ -146,14 +166,19 @@ impl CompositorHandler for DriftWm {
                 let mut guard = states.cached_state.get::<SurfaceAttributes>();
                 let attrs = guard.current();
                 if let Some(ref mut region) = attrs.opaque_region {
-                    let Some(bounds) = region.rects.iter()
+                    let Some(bounds) = region
+                        .rects
+                        .iter()
                         .filter(|(k, _)| matches!(k, RectangleKind::Add))
                         .map(|(_, r)| *r)
                         .reduce(|a, b| a.merge(b))
-                    else { return };
+                    else {
+                        return;
+                    };
                     let r = self.config.decorations.corner_radius + 2;
                     if bounds.size.w > 2 * r && bounds.size.h > 2 * r {
-                        let (x, y, w, h) = (bounds.loc.x, bounds.loc.y, bounds.size.w, bounds.size.h);
+                        let (x, y, w, h) =
+                            (bounds.loc.x, bounds.loc.y, bounds.size.w, bounds.size.h);
                         for corner in [
                             Rectangle::new((x, y).into(), (r, r).into()),
                             Rectangle::new((x + w - r, y).into(), (r, r).into()),
@@ -194,7 +219,8 @@ impl CompositorHandler for DriftWm {
                 .any(|ls| ls.wl_surface() == surface);
             if is_lock_surface {
                 // locker.lock() consumes — take it out of the enum.
-                let old = std::mem::replace(&mut self.session_lock, crate::state::SessionLock::Locked);
+                let old =
+                    std::mem::replace(&mut self.session_lock, crate::state::SessionLock::Locked);
                 if let crate::state::SessionLock::Pending(locker) = old {
                     locker.lock();
                     tracing::info!("Session lock confirmed");
@@ -247,7 +273,10 @@ impl CompositorHandler for DriftWm {
                     // Rule side-effects may already have run on a previous
                     // commit (first commit had zero size; retried).
                     let already_applied = with_states(&root, |states| {
-                        states.data_map.get::<std::sync::Mutex<driftwm::config::AppliedWindowRule>>().is_some()
+                        states
+                            .data_map
+                            .get::<std::sync::Mutex<driftwm::config::AppliedWindowRule>>()
+                            .is_some()
                     });
 
                     if let Some(ref a) = applied {
@@ -256,8 +285,12 @@ impl CompositorHandler for DriftWm {
                             states.data_map.insert_if_missing_threadsafe(|| {
                                 std::sync::Mutex::new(stored.clone())
                             });
-                            *states.data_map.get::<std::sync::Mutex<driftwm::config::AppliedWindowRule>>()
-                                .unwrap().lock().unwrap() = stored;
+                            *states
+                                .data_map
+                                .get::<std::sync::Mutex<driftwm::config::AppliedWindowRule>>()
+                                .unwrap()
+                                .lock()
+                                .unwrap() = stored;
                         });
                     }
 
@@ -340,11 +373,12 @@ impl CompositorHandler for DriftWm {
                             // Both placement paths need the SSD bar to
                             // center the *visible frame* (titlebar +
                             // content) on the target.
-                            let bar_px = if matches!(effective, driftwm::config::DecorationMode::Server) {
-                                self.config.decorations.title_bar_height
-                            } else {
-                                0
-                            };
+                            let bar_px =
+                                if matches!(effective, driftwm::config::DecorationMode::Server) {
+                                    self.config.decorations.title_bar_height
+                                } else {
+                                    0
+                                };
                             let cursor_pos = if matches!(
                                 self.config.window_placement,
                                 driftwm::config::WindowPlacement::Cursor
@@ -359,10 +393,10 @@ impl CompositorHandler for DriftWm {
                                     self.config.window_placement,
                                     driftwm::config::WindowPlacement::Auto
                                 ) {
-                                    self.auto_placement_pos(&window, geo.size, bar_px)
-                                } else {
-                                    None
-                                };
+                                self.auto_placement_pos(&window, geo.size, bar_px)
+                            } else {
+                                None
+                            };
                             let placed = cursor_pos.or(auto_pos).unwrap_or_else(|| {
                                 let output_geo = self
                                     .active_output()
@@ -373,7 +407,8 @@ impl CompositorHandler for DriftWm {
                                     let cam = self.camera();
                                     let z = self.zoom();
                                     let cx = (cam.x + vc.x / z).round() as i32 - geo.size.w / 2;
-                                    let cy = (cam.y + bar_f / 2.0 + vc.y / z).round() as i32 - geo.size.h / 2;
+                                    let cy = (cam.y + bar_f / 2.0 + vc.y / z).round() as i32
+                                        - geo.size.h / 2;
                                     (cx, cy)
                                 } else {
                                     (0, 0)
@@ -412,8 +447,7 @@ impl CompositorHandler for DriftWm {
                             // across the flip. Skip if already sized to
                             // avoid clobbering a rule-forced size or an
                             // ack'd configure.
-                            let already_sized =
-                                toplevel.with_pending_state(|s| s.size.is_some());
+                            let already_sized = toplevel.with_pending_state(|s| s.size.is_some());
                             if !already_sized {
                                 let current_size = geo.size;
                                 toplevel.with_pending_state(|state| {
@@ -429,7 +463,9 @@ impl CompositorHandler for DriftWm {
                     }
 
                     // Widget side-effects fire only on first apply.
-                    if let Some(ref applied) = applied && !already_applied {
+                    if let Some(ref applied) = applied
+                        && !already_applied
+                    {
                         if applied.widget {
                             self.enforce_below_windows();
                         }
@@ -511,8 +547,10 @@ impl CompositorHandler for DriftWm {
                 // Re-center after unfit once the client has actually shrunk
                 // from fit-era geometry — firing earlier would re-center
                 // around the big fit size and land off-screen.
-                if let Some(&PendingRecenter { target_center, pre_exit_size }) =
-                    self.pending_recenter.get(&root.id())
+                if let Some(&PendingRecenter {
+                    target_center,
+                    pre_exit_size,
+                }) = self.pending_recenter.get(&root.id())
                 {
                     let geo = window.geometry();
                     if geo.size.w > 0 && geo.size.h > 0 && geo.size != pre_exit_size {
@@ -559,9 +597,8 @@ fn ensure_initial_configure(
         let Some(toplevel) = window.toplevel() else {
             return;
         };
-        let initial_configure_sent = smithay::wayland::compositor::with_states(
-            toplevel.wl_surface(),
-            |states| {
+        let initial_configure_sent =
+            smithay::wayland::compositor::with_states(toplevel.wl_surface(), |states| {
                 states
                     .data_map
                     .get::<XdgToplevelSurfaceData>()
@@ -569,8 +606,7 @@ fn ensure_initial_configure(
                     .lock()
                     .unwrap()
                     .initial_configure_sent
-            },
-        );
+            });
         if !initial_configure_sent {
             toplevel.send_configure();
         }
@@ -578,7 +614,10 @@ fn ensure_initial_configure(
 }
 
 impl DriftWm {
-    fn focus_exclusive_layer(&mut self, surface: &smithay::reexports::wayland_server::protocol::wl_surface::WlSurface) {
+    fn focus_exclusive_layer(
+        &mut self,
+        surface: &smithay::reexports::wayland_server::protocol::wl_surface::WlSurface,
+    ) {
         let keyboard = self.seat.get_keyboard().unwrap();
         let already_focused = keyboard
             .current_focus()
@@ -604,7 +643,9 @@ impl DriftWm {
             .canvas_layers
             .iter()
             .position(|cl| cl.surface.wl_surface() == &root);
-        let Some(idx) = idx else { return false; };
+        let Some(idx) = idx else {
+            return false;
+        };
 
         // First commit: resolve position once surface size is known.
         if self.canvas_layers[idx].position.is_none() {
@@ -723,10 +764,16 @@ impl DriftWm {
         });
 
         let (edges, initial_window_location, initial_window_size) = match resize_state {
-            ResizeState::Resizing { edges, initial_window_location, initial_window_size }
-            | ResizeState::WaitingForLastCommit { edges, initial_window_location, initial_window_size } => {
-                (edges, initial_window_location, initial_window_size)
+            ResizeState::Resizing {
+                edges,
+                initial_window_location,
+                initial_window_size,
             }
+            | ResizeState::WaitingForLastCommit {
+                edges,
+                initial_window_location,
+                initial_window_size,
+            } => (edges, initial_window_location, initial_window_size),
             ResizeState::Idle => return,
         };
 

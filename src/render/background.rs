@@ -1,8 +1,8 @@
 use smithay::backend::allocator::Fourcc;
+use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::gles::{
     GlesRenderer, GlesTexture, Uniform, element::PixelShaderElement,
 };
-use smithay::backend::renderer::element::Kind;
 use smithay::output::Output;
 use smithay::utils::{Logical, Point, Rectangle, Size};
 
@@ -83,25 +83,34 @@ pub fn init_background(
     // `None` means this output reused a cached compiled shader and reached no
     // fresh verdict, so the error set by the output that first compiled it must
     // be left untouched (a second-monitor cache hit must not clear it).
-    let outcome: Option<Result<(), String>> = match state.config.background.kind.clone() {
-        BackgroundKind::Tile(path) if is_tiff_path(&path) => {
-            Some(tile_chunks_or_shader_fallback(
-                state, renderer, initial_size, output_name, &path,
-            ))
-        }
-        BackgroundKind::Tile(path) => texture_or_shader_fallback(
-            state, renderer, initial_size, output_name, &path, TextureBgMode::Tile,
-        ),
-        BackgroundKind::Wallpaper(path) => texture_or_shader_fallback(
-            state, renderer, initial_size, output_name, &path, TextureBgMode::Wallpaper,
-        ),
-        BackgroundKind::Shader(path) if state.config.background.cache_shader => {
-            shader_chunks_or_live(state, renderer, initial_size, output_name, &path)
-        }
-        BackgroundKind::Shader(_) | BackgroundKind::Default => {
-            init_shader_bg(state, renderer, initial_size, output_name)
-        }
-    };
+    let outcome: Option<Result<(), String>> =
+        match state.config.background.kind.clone() {
+            BackgroundKind::Tile(path) if is_tiff_path(&path) => Some(
+                tile_chunks_or_shader_fallback(state, renderer, initial_size, output_name, &path),
+            ),
+            BackgroundKind::Tile(path) => texture_or_shader_fallback(
+                state,
+                renderer,
+                initial_size,
+                output_name,
+                &path,
+                TextureBgMode::Tile,
+            ),
+            BackgroundKind::Wallpaper(path) => texture_or_shader_fallback(
+                state,
+                renderer,
+                initial_size,
+                output_name,
+                &path,
+                TextureBgMode::Wallpaper,
+            ),
+            BackgroundKind::Shader(path) if state.config.background.cache_shader => {
+                shader_chunks_or_live(state, renderer, initial_size, output_name, &path)
+            }
+            BackgroundKind::Shader(_) | BackgroundKind::Default => {
+                init_shader_bg(state, renderer, initial_size, output_name)
+            }
+        };
 
     match outcome {
         Some(Ok(())) => state.clear_error(crate::state::ErrorSource::Background),
@@ -212,9 +221,7 @@ fn shader_chunks_or_live(
             init_shader_bg(state, renderer, initial_size, output_name);
             Some(Err(msg))
         }
-        ShaderBakeOutcome::Ineligible => {
-            init_shader_bg(state, renderer, initial_size, output_name)
-        }
+        ShaderBakeOutcome::Ineligible => init_shader_bg(state, renderer, initial_size, output_name),
     }
 }
 
@@ -352,7 +359,10 @@ fn try_init_texture_bg(
         TextureBgMode::Tile => vec![
             Uniform::new("u_camera", (0.0f32, 0.0f32)),
             Uniform::new("u_tile_size", (w as f32, h as f32)),
-            Uniform::new("u_output_size", (initial_size.w as f32, initial_size.h as f32)),
+            Uniform::new(
+                "u_output_size",
+                (initial_size.w as f32, initial_size.h as f32),
+            ),
         ],
         // Wallpaper shader has no camera/zoom/time uniforms — image stretches to v_coords [0,1].
         TextureBgMode::Wallpaper => vec![],
@@ -455,7 +465,8 @@ fn init_shader_bg(
         };
 
         state.render.background_is_animated = references_uniform(&shader_source, "float", "u_time");
-        state.render.background_uses_camera = references_uniform(&shader_source, "vec2", "u_camera");
+        state.render.background_uses_camera =
+            references_uniform(&shader_source, "vec2", "u_camera");
         state.render.background_uses_zoom = references_uniform(&shader_source, "float", "u_zoom");
         state.render.background_shader = Some(compiled.clone());
         outcome = Some(err.map_or(Ok(()), Err));
@@ -464,18 +475,21 @@ fn init_shader_bg(
 
     let area = Rectangle::from_size(initial_size);
     let time_secs = state.start_time.elapsed().as_secs_f32();
-    state.render.cached_bg_elements.insert(output_name.to_string(), PixelShaderElement::new(
-        shader,
-        area,
-        Some(vec![area]),
-        1.0,
-        vec![
-            Uniform::new("u_camera", (0.0f32, 0.0f32)),
-            Uniform::new("u_time", time_secs),
-            Uniform::new("u_zoom", 1.0f32),
-        ],
-        Kind::Unspecified,
-    ));
+    state.render.cached_bg_elements.insert(
+        output_name.to_string(),
+        PixelShaderElement::new(
+            shader,
+            area,
+            Some(vec![area]),
+            1.0,
+            vec![
+                Uniform::new("u_camera", (0.0f32, 0.0f32)),
+                Uniform::new("u_time", time_secs),
+                Uniform::new("u_zoom", 1.0f32),
+            ],
+            Kind::Unspecified,
+        ),
+    );
 
     outcome
 }

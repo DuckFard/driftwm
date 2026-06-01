@@ -210,7 +210,10 @@ where
     D: GammaControlHandler,
 {
     resource.failed();
-    state.gamma_control_manager_state().gamma_controls.remove(output);
+    state
+        .gamma_control_manager_state()
+        .gamma_controls
+        .remove(output);
     let _ = state.set_gamma(output, None);
 }
 

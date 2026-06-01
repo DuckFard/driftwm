@@ -83,11 +83,9 @@ pub fn build_error_bar_elements(
         return Vec::new();
     };
 
-    vec![OutputRenderElements::Decoration(PixelSnapRescaleElement::from_element(
-        elem,
-        Point::<i32, Physical>::from((0, 0)),
-        1.0,
-    ))]
+    vec![OutputRenderElements::Decoration(
+        PixelSnapRescaleElement::from_element(elem, Point::<i32, Physical>::from((0, 0)), 1.0),
+    )]
 }
 
 /// Join all error messages onto one line, collapsing internal whitespace
@@ -132,7 +130,14 @@ fn render_error_bar(text: &str, width: i32, bar_height: i32, scale: i32) -> Memo
         );
     }
 
-    MemoryRenderBuffer::from_slice(&pixels, Fourcc::Abgr8888, (w, h), s, Transform::Normal, None)
+    MemoryRenderBuffer::from_slice(
+        &pixels,
+        Fourcc::Abgr8888,
+        (w, h),
+        s,
+        Transform::Normal,
+        None,
+    )
 }
 
 #[cfg(test)]
@@ -142,7 +147,10 @@ mod tests {
     #[test]
     fn join_errors_collapses_newlines_and_runs() {
         let mut errors = BTreeMap::new();
-        errors.insert(ErrorSource::Config, "config error:\n  expected `=`".to_string());
+        errors.insert(
+            ErrorSource::Config,
+            "config error:\n  expected `=`".to_string(),
+        );
         let joined = join_errors(&errors);
         assert_eq!(joined, "config error: expected `=`");
     }

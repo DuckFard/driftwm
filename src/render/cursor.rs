@@ -1,8 +1,6 @@
 use smithay::backend::renderer::{
     element::{
-        Kind,
-        memory::MemoryRenderBufferRenderElement,
-        surface::WaylandSurfaceRenderElement,
+        Kind, memory::MemoryRenderBufferRenderElement, surface::WaylandSurfaceRenderElement,
     },
     gles::GlesRenderer,
 };
@@ -52,7 +50,8 @@ pub fn build_cursor_elements(
             let pos: Point<i32, Physical> = (
                 (physical_pos.x - hotspot.x as f64) as i32,
                 (physical_pos.y - hotspot.y as f64) as i32,
-            ).into();
+            )
+                .into();
             let elems: Vec<WaylandSurfaceRenderElement<GlesRenderer>> =
                 smithay::backend::renderer::element::surface::render_elements_from_surface_tree(
                     renderer,
@@ -62,7 +61,10 @@ pub fn build_cursor_elements(
                     alpha,
                     Kind::Cursor,
                 );
-            elems.into_iter().map(|e| OutputRenderElements::CursorSurface(e.into())).collect()
+            elems
+                .into_iter()
+                .map(|e| OutputRenderElements::CursorSurface(e.into()))
+                .collect()
         }
         CursorImageStatus::Named(icon) => {
             build_xcursor_elements(state, renderer, physical_pos, icon.name(), alpha)
@@ -116,8 +118,8 @@ fn build_xcursor_elements(
     let frame_idx = if cursor_frames.total_duration_ms == 0 {
         0
     } else {
-        let elapsed = state.start_time.elapsed().as_millis() as u32
-            % cursor_frames.total_duration_ms;
+        let elapsed =
+            state.start_time.elapsed().as_millis() as u32 % cursor_frames.total_duration_ms;
         let mut acc = 0u32;
         let mut idx = 0;
         for (i, &(_, _, delay)) in cursor_frames.frames.iter().enumerate() {

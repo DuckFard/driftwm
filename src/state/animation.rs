@@ -46,7 +46,12 @@ impl DriftWm {
             self.layer_surface_under(
                 screen_pos,
                 canvas_pos,
-                &[WlrLayer::Overlay, WlrLayer::Top, WlrLayer::Bottom, WlrLayer::Background],
+                &[
+                    WlrLayer::Overlay,
+                    WlrLayer::Top,
+                    WlrLayer::Bottom,
+                    WlrLayer::Background,
+                ],
             )
         } else {
             self.surface_under(canvas_pos, Some(false))
@@ -64,7 +69,9 @@ impl DriftWm {
 
         let constraint_active = pointer.current_focus().is_some_and(|focus| {
             smithay::wayland::pointer_constraints::with_pointer_constraint(
-                &focus.0, &pointer, |c| c.is_some_and(|c| c.is_active()),
+                &focus.0,
+                &pointer,
+                |c| c.is_some_and(|c| c.is_active()),
             )
         });
         if constraint_active {
@@ -92,9 +99,7 @@ impl DriftWm {
         if self.panning() {
             return;
         }
-        let delta = self
-            .with_output_state(|os| os.momentum.tick(dt))
-            .flatten();
+        let delta = self.with_output_state(|os| os.momentum.tick(dt)).flatten();
         let Some(delta) = delta else {
             return;
         };
@@ -111,7 +116,9 @@ impl DriftWm {
     /// Synthetic pointer motion keeps cursor at the same screen position and
     /// lets the active MoveSurfaceGrab reposition the window automatically.
     pub fn apply_edge_pan(&mut self) {
-        let Some(velocity) = self.edge_pan_velocity() else { return; };
+        let Some(velocity) = self.edge_pan_velocity() else {
+            return;
+        };
         // velocity is screen-space speed; convert to canvas delta
         let zoom = self.zoom();
         let canvas_delta = Point::from((velocity.x / zoom, velocity.y / zoom));
@@ -164,13 +171,16 @@ impl DriftWm {
         if let Some(token) = self.momentum_timer.take() {
             self.loop_handle.remove(token);
         }
-        let token = self.loop_handle.insert_source(
-            smithay::reexports::calloop::timer::Timer::from_duration(Duration::from_millis(50)),
-            |_, _, data: &mut DriftWm| {
-                data.launch_momentum();
-                smithay::reexports::calloop::timer::TimeoutAction::Drop
-            },
-        ).ok();
+        let token = self
+            .loop_handle
+            .insert_source(
+                smithay::reexports::calloop::timer::Timer::from_duration(Duration::from_millis(50)),
+                |_, _, data: &mut DriftWm| {
+                    data.launch_momentum();
+                    smithay::reexports::calloop::timer::TimeoutAction::Drop
+                },
+            )
+            .ok();
         self.momentum_timer = token;
     }
 
@@ -240,9 +250,8 @@ impl DriftWm {
             && now >= show_at
         {
             self.cursor.exec_cursor_show_at = None;
-            self.cursor.cursor_status = CursorImageStatus::Named(
-                smithay::input::pointer::CursorIcon::Wait,
-            );
+            self.cursor.cursor_status =
+                CursorImageStatus::Named(smithay::input::pointer::CursorIcon::Wait);
         }
     }
 
@@ -279,10 +288,7 @@ impl DriftWm {
             let cy = current_center.y + (target_center.y - current_center.y) * factor;
 
             let cur_zoom = self.zoom();
-            self.set_camera(Point::from((
-                cx - vc.x / cur_zoom,
-                cy - vc.y / cur_zoom,
-            )));
+            self.set_camera(Point::from((cx - vc.x / cur_zoom, cy - vc.y / cur_zoom)));
             self.update_output_from_camera();
 
             // Suppress camera_animation — we set camera directly
@@ -391,7 +397,9 @@ impl DriftWm {
     fn tick_edge_pan_on(&mut self, output: &Output, is_active: bool) {
         let canvas_delta = {
             let os = output_state(output);
-            let Some(velocity) = os.edge_pan_velocity else { return };
+            let Some(velocity) = os.edge_pan_velocity else {
+                return;
+            };
             Point::from((velocity.x / os.zoom, velocity.y / os.zoom))
         };
 
@@ -410,7 +418,9 @@ impl DriftWm {
     fn tick_camera_animation_on(&mut self, output: &Output, is_active: bool, dt: Duration) {
         let (target, old_camera) = {
             let os = output_state(output);
-            let Some(target) = os.camera_target else { return };
+            let Some(target) = os.camera_target else {
+                return;
+            };
             (target, os.camera)
         };
 
@@ -425,10 +435,7 @@ impl DriftWm {
                 os.camera = target;
                 os.camera_target = None;
             } else {
-                os.camera = Point::from((
-                    old_camera.x + dx * factor,
-                    old_camera.y + dy * factor,
-                ));
+                os.camera = Point::from((old_camera.x + dx * factor, old_camera.y + dy * factor));
             }
         }
 
@@ -438,7 +445,6 @@ impl DriftWm {
             let pos = self.seat.get_pointer().unwrap().current_location();
             self.warp_pointer(pos + delta);
         }
-
     }
 
     fn tick_zoom_animation_on(&mut self, output: &Output, is_active: bool, dt: Duration) {
@@ -475,10 +481,7 @@ impl DriftWm {
             {
                 let mut os = output_state(output);
                 let cur_zoom = os.zoom;
-                os.camera = Point::from((
-                    cx - vc.x / cur_zoom,
-                    cy - vc.y / cur_zoom,
-                ));
+                os.camera = Point::from((cx - vc.x / cur_zoom, cy - vc.y / cur_zoom));
                 // Suppress camera_animation — we set camera directly
                 os.camera_target = None;
 

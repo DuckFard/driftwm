@@ -120,9 +120,16 @@ pub fn place_auto(
             for mode in [FitMode::Full, FitMode::Partial] {
                 let mut best: Option<(usize, (f64, f64))> = None;
                 for &edge in &edges {
-                    if let Some(pos) = try_place(&m, windows, m_idx, new_w, new_h, edge, mode, gap) {
-                        let cand = Rect { x: pos.0, y: pos.1, w: new_w, h: new_h };
-                        let attach = count_attachments(&cand, windows, m_idx, cluster_eligible, gap);
+                    if let Some(pos) = try_place(&m, windows, m_idx, new_w, new_h, edge, mode, gap)
+                    {
+                        let cand = Rect {
+                            x: pos.0,
+                            y: pos.1,
+                            w: new_w,
+                            h: new_h,
+                        };
+                        let attach =
+                            count_attachments(&cand, windows, m_idx, cluster_eligible, gap);
                         if best.is_none_or(|(c, _)| attach > c) {
                             best = Some((attach, pos));
                         }
@@ -139,7 +146,8 @@ pub fn place_auto(
             // edge.
             for edge in edges {
                 for mode in [FitMode::Full, FitMode::Partial] {
-                    if let Some(pos) = try_place(&m, windows, m_idx, new_w, new_h, edge, mode, gap) {
+                    if let Some(pos) = try_place(&m, windows, m_idx, new_w, new_h, edge, mode, gap)
+                    {
                         return Some(pos);
                     }
                 }
@@ -185,8 +193,8 @@ fn edge_order_for(
     focused_cluster_bbox: Option<(f64, f64)>,
 ) -> [Edge; 4] {
     let base = edge_order(m, vc);
-    let in_deadzone = (vc.0 - m.cx()).abs() < VIEWPORT_DEADZONE
-        && (vc.1 - m.cy()).abs() < VIEWPORT_DEADZONE;
+    let in_deadzone =
+        (vc.0 - m.cx()).abs() < VIEWPORT_DEADZONE && (vc.1 - m.cy()).abs() < VIEWPORT_DEADZONE;
     if !in_deadzone {
         return base;
     }
@@ -201,8 +209,12 @@ fn edge_order_for(
             continue;
         }
         match adjacent_side(&m_snap, &w.to_snap(), gap) {
-            Some(crate::layout::cluster::Side::Left | crate::layout::cluster::Side::Right) => x_occupied = true,
-            Some(crate::layout::cluster::Side::Top | crate::layout::cluster::Side::Bottom) => y_occupied = true,
+            Some(crate::layout::cluster::Side::Left | crate::layout::cluster::Side::Right) => {
+                x_occupied = true
+            }
+            Some(crate::layout::cluster::Side::Top | crate::layout::cluster::Side::Bottom) => {
+                y_occupied = true
+            }
             None => (),
         }
     }
@@ -279,12 +291,7 @@ fn cluster_bbox(windows: &[Rect], eligible: &HashSet<usize>) -> Option<(f64, f64
 
 /// BFS the snap-adjacency graph restricted to `eligible`. Within each
 /// layer, neighbors visit in order of canvas distance to `start` — closer first.
-fn bfs_cluster(
-    windows: &[Rect],
-    start: usize,
-    eligible: &HashSet<usize>,
-    gap: f64,
-) -> Vec<usize> {
+fn bfs_cluster(windows: &[Rect], start: usize, eligible: &HashSet<usize>, gap: f64) -> Vec<usize> {
     let mut visited: HashSet<usize> = HashSet::new();
     let mut order: Vec<usize> = Vec::new();
     let mut queue: VecDeque<usize> = VecDeque::new();
@@ -445,11 +452,7 @@ fn try_place(
 /// Complement of `forbidden` on the real line; overlapping inputs merge.
 /// Result is in increasing order, possibly unbounded on either end.
 fn compute_free_intervals(forbidden: &[(f64, f64)]) -> Vec<(f64, f64)> {
-    let mut sorted: Vec<(f64, f64)> = forbidden
-        .iter()
-        .copied()
-        .filter(|&(a, b)| b > a)
-        .collect();
+    let mut sorted: Vec<(f64, f64)> = forbidden.iter().copied().filter(|&(a, b)| b > a).collect();
     sorted.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
 
     let mut merged: Vec<(f64, f64)> = Vec::new();
@@ -540,11 +543,11 @@ mod tests {
         // < new_h=100) but long enough for partial-fit (overhangs F's
         // bottom into the free interval below F.y_high=200).
         let ws = vec![
-            r(0.0, 0.0, 200.0, 200.0),         // F
-            r(204.0, -1000.0, 100.0, 1104.0),  // right blocker, y=[-1000, 104]
-            r(0.0, 204.0, 200.0, 100.0),       // bottom block
-            r(-104.0, 0.0, 100.0, 200.0),      // left block
-            r(0.0, -104.0, 200.0, 100.0),      // top block
+            r(0.0, 0.0, 200.0, 200.0),        // F
+            r(204.0, -1000.0, 100.0, 1104.0), // right blocker, y=[-1000, 104]
+            r(0.0, 204.0, 200.0, 100.0),      // bottom block
+            r(-104.0, 0.0, 100.0, 200.0),     // left block
+            r(0.0, -104.0, 200.0, 100.0),     // top block
         ];
         let pos = place(&ws, 0, 50.0, 100.0, (1000.0, 100.0)).unwrap();
         // Right Partial: lo=108 (free interval start), par_lo = clamp(50, 108, 200) = 108.
@@ -559,8 +562,8 @@ mod tests {
         // The new window C should land at A's top, slightly left of B —
         // snap-flush with A's top AND B's left edge.
         let ws = vec![
-            r(0.0, 0.0, 200.0, 200.0),       // A (focused)
-            r(50.0, -204.0, 200.0, 200.0),   // B above A, offset right by 50
+            r(0.0, 0.0, 200.0, 200.0),     // A (focused)
+            r(50.0, -204.0, 200.0, 200.0), // B above A, offset right by 50
         ];
         let pos = place(&ws, 0, 200.0, 200.0, (100.0, -200.0)).unwrap();
         // Forbidden x for Top: (B.x - new_w - gap, B.x_high + gap) = (-154, 254).
@@ -577,8 +580,8 @@ mod tests {
         // direction signal wins — the algorithm picks Right Partial rather
         // than detouring to Bottom for a cleaner fit.
         let ws = vec![
-            r(0.0, 0.0, 200.0, 200.0),         // F (focused)
-            r(204.0, -1000.0, 100.0, 1104.0),  // right blocker, y=[-1000, 104]
+            r(0.0, 0.0, 200.0, 200.0),        // F (focused)
+            r(204.0, -1000.0, 100.0, 1104.0), // right blocker, y=[-1000, 104]
         ];
         let pos = place(&ws, 0, 50.0, 100.0, (1000.0, 100.0)).unwrap();
         // Right Partial: free interval [108, ∞), par_lo = 108.
@@ -612,8 +615,8 @@ mod tests {
         // Full-fit on focused's Left → expected (-54, 50).
         let ws = vec![
             r(0.0, 0.0, 200.0, 200.0),
-            r(204.0, 0.0, 100.0, 200.0),  // right
-            r(0.0, 204.0, 200.0, 100.0),  // bottom
+            r(204.0, 0.0, 100.0, 200.0), // right
+            r(0.0, 204.0, 200.0, 100.0), // bottom
         ];
         let pos = place(&ws, 0, 50.0, 100.0, (1000.0, 100.0)).unwrap();
         assert_eq!(pos, (-54.0, 50.0));
@@ -649,11 +652,11 @@ mod tests {
         // deadzone), the 2D-growth heuristic does not override viewport
         // bias — Right edge of W_right wins.
         let ws = vec![
-            r(0.0, 0.0, 200.0, 200.0),                // F
-            r(204.0, 0.0, 100.0, 200.0),              // W_right (cluster member)
-            r(-104.0, 0.0, 100.0, 200.0),             // W_left
-            r(0.0, 204.0, 200.0, 100.0),              // W_bottom
-            r(0.0, -104.0, 200.0, 100.0),             // W_top
+            r(0.0, 0.0, 200.0, 200.0),    // F
+            r(204.0, 0.0, 100.0, 200.0),  // W_right (cluster member)
+            r(-104.0, 0.0, 100.0, 200.0), // W_left
+            r(0.0, 204.0, 200.0, 100.0),  // W_bottom
+            r(0.0, -104.0, 200.0, 100.0), // W_top
         ];
         let pos = place(&ws, 0, 50.0, 100.0, (1000.0, 100.0)).unwrap();
         // W_right at (204, 0, 100, 200). Right edge: x = 308. Centered y = 50.
@@ -670,9 +673,9 @@ mod tests {
         // can stack vertically. Earlier `hi = b - new_par_len` formula
         // rejected this and fell through to Right.
         let ws = vec![
-            r(0.0, 100.0, 100.0, 100.0),     // A
-            r(104.0, 100.0, 100.0, 100.0),   // B
-            r(104.0, -4.0, 100.0, 100.0),    // C (focused, above B)
+            r(0.0, 100.0, 100.0, 100.0),   // A
+            r(104.0, 100.0, 100.0, 100.0), // B
+            r(104.0, -4.0, 100.0, 100.0),  // C (focused, above B)
         ];
         let pos = place(&ws, 2, 100.0, 100.0, (-1000.0, -4.0)).unwrap();
         // C has Bottom neighbor (B), so X axis preferred (free axis).
@@ -687,8 +690,8 @@ mod tests {
         // the new window would extend the line). The heuristic should
         // prefer Top/Bottom instead.
         let ws = vec![
-            r(0.0, 0.0, 200.0, 200.0),       // F
-            r(-204.0, 0.0, 200.0, 200.0),    // Left neighbor (cluster mate)
+            r(0.0, 0.0, 200.0, 200.0),    // F
+            r(-204.0, 0.0, 200.0, 200.0), // Left neighbor (cluster mate)
         ];
         let pos = place(&ws, 0, 100.0, 100.0, (100.0, 100.0)).unwrap();
         // CW from default (Right when vc≈center) → Bottom is the first
@@ -705,9 +708,9 @@ mod tests {
         // Left-of-C (touches both C and A) over Right-of-C (touches only C),
         // forming a 2x2 square instead of an L extending right.
         let ws = vec![
-            r(0.0, 0.0, 100.0, 100.0),       // A
-            r(104.0, 0.0, 100.0, 100.0),     // B
-            r(104.0, 104.0, 100.0, 100.0),   // C (focused)
+            r(0.0, 0.0, 100.0, 100.0),     // A
+            r(104.0, 0.0, 100.0, 100.0),   // B
+            r(104.0, 104.0, 100.0, 100.0), // C (focused)
         ];
         let pos = place(&ws, 2, 100.0, 100.0, (154.0, 154.0)).unwrap();
         // Compact picks Left of C → new at (0, 104), snap-flush with both
@@ -724,18 +727,18 @@ mod tests {
         // new window goes Below the focused, starting to fill out a
         // 4th row toward a 4x4 square.
         let ws = vec![
-            r(0.0, 0.0, 100.0, 100.0),       // (0,0)
-            r(104.0, 0.0, 100.0, 100.0),     // (1,0)
-            r(208.0, 0.0, 100.0, 100.0),     // (2,0)
-            r(312.0, 0.0, 100.0, 100.0),     // (3,0)
-            r(0.0, 104.0, 100.0, 100.0),     // (0,1)
-            r(104.0, 104.0, 100.0, 100.0),   // (1,1)
-            r(208.0, 104.0, 100.0, 100.0),   // (2,1)
-            r(312.0, 104.0, 100.0, 100.0),   // (3,1)
-            r(0.0, 208.0, 100.0, 100.0),     // (0,2)
-            r(104.0, 208.0, 100.0, 100.0),   // (1,2)
-            r(208.0, 208.0, 100.0, 100.0),   // (2,2)
-            r(312.0, 208.0, 100.0, 100.0),   // (3,2) focused (bottom-right)
+            r(0.0, 0.0, 100.0, 100.0),     // (0,0)
+            r(104.0, 0.0, 100.0, 100.0),   // (1,0)
+            r(208.0, 0.0, 100.0, 100.0),   // (2,0)
+            r(312.0, 0.0, 100.0, 100.0),   // (3,0)
+            r(0.0, 104.0, 100.0, 100.0),   // (0,1)
+            r(104.0, 104.0, 100.0, 100.0), // (1,1)
+            r(208.0, 104.0, 100.0, 100.0), // (2,1)
+            r(312.0, 104.0, 100.0, 100.0), // (3,1)
+            r(0.0, 208.0, 100.0, 100.0),   // (0,2)
+            r(104.0, 208.0, 100.0, 100.0), // (1,2)
+            r(208.0, 208.0, 100.0, 100.0), // (2,2)
+            r(312.0, 208.0, 100.0, 100.0), // (3,2) focused (bottom-right)
         ];
         let pos = place(&ws, 11, 100.0, 100.0, (362.0, 258.0)).unwrap();
         // Bbox 4 wide × 3 tall → prefer Y. Bottom of focused at (312, 312).
@@ -747,9 +750,9 @@ mod tests {
         // F has neighbors on both axes. Heuristic disabled → viewport
         // tiebreak picks Right (vc to the right of F).
         let ws = vec![
-            r(0.0, 0.0, 200.0, 200.0),       // F (Right edge of F is open)
-            r(-204.0, 0.0, 200.0, 200.0),    // Left neighbor
-            r(0.0, -204.0, 200.0, 200.0),    // Top neighbor
+            r(0.0, 0.0, 200.0, 200.0),    // F (Right edge of F is open)
+            r(-204.0, 0.0, 200.0, 200.0), // Left neighbor
+            r(0.0, -204.0, 200.0, 200.0), // Top neighbor
         ];
         let pos = place(&ws, 0, 100.0, 100.0, (1000.0, 100.0)).unwrap();
         assert_eq!(pos, (204.0, 50.0));

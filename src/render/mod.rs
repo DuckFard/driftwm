@@ -21,16 +21,16 @@ pub use elements::{
     OutputRenderElements, PixelSnapRescaleElement, RoundedCornerElement, TileShaderElement,
 };
 pub use error_bar::ErrorBarCache;
-pub use shader_chunks::ShaderChunkCache;
-pub use tile_chunks::BgChunkCache;
 pub use lifecycle::{
     post_render, refresh_foreign_toplevels, take_presentation_feedback,
     update_primary_scanout_output,
 };
+pub use shader_chunks::ShaderChunkCache;
 pub use shaders::{
     BorderPhysKey, ShadowPhysKey, compile_border_shader, compile_corner_clip_shader,
     compile_shadow_shader,
 };
+pub use tile_chunks::BgChunkCache;
 
 use blur::{BlurLayer, BlurRequestData, process_blur_requests};
 use layers::{build_canvas_layer_elements, build_layer_elements};
@@ -68,14 +68,15 @@ fn compose_lock_frame(
 
     if let Some(lock_surface) = state.lock_surfaces.get(output) {
         let output_scale = output.current_scale().fractional_scale();
-        let lock_elements = smithay::backend::renderer::element::surface::render_elements_from_surface_tree(
-            renderer,
-            lock_surface.wl_surface(),
-            (0, 0),
-            Scale::from(output_scale),
-            1.0,
-            Kind::Unspecified,
-        );
+        let lock_elements =
+            smithay::backend::renderer::element::surface::render_elements_from_surface_tree(
+                renderer,
+                lock_surface.wl_surface(),
+                (0, 0),
+                Scale::from(output_scale),
+                1.0,
+                Kind::Unspecified,
+            );
         elements.extend(lock_elements.into_iter().map(OutputRenderElements::Layer));
     }
 
@@ -119,18 +120,20 @@ fn push_corner_clipped_elements(
         corner_radius[3].clamp(0.0, max_r),
     ];
     for elem in elems {
-        target.push(OutputRenderElements::CsdWindow(PixelSnapRescaleElement::from_element(
-            RoundedCornerElement::new(
-                elem,
-                shader.clone(),
-                geometry,
-                clamped,
-                output_scale,
-                aa_scale,
+        target.push(OutputRenderElements::CsdWindow(
+            PixelSnapRescaleElement::from_element(
+                RoundedCornerElement::new(
+                    elem,
+                    shader.clone(),
+                    geometry,
+                    clamped,
+                    output_scale,
+                    aa_scale,
+                ),
+                Point::<i32, Physical>::from((0, 0)),
+                zoom,
             ),
-            Point::<i32, Physical>::from((0, 0)),
-            zoom,
-        )));
+        ));
     }
 }
 
@@ -191,11 +194,7 @@ pub fn compose_frame(
     };
 
     let viewport_size = crate::state::output_logical_size(output);
-    let visible_rect = canvas::visible_canvas_rect(
-        camera.to_i32_round(),
-        viewport_size,
-        zoom,
-    );
+    let visible_rect = canvas::visible_canvas_rect(camera.to_i32_round(), viewport_size, zoom);
     let output_scale = output.current_scale().fractional_scale();
     let scale = Scale::from(output_scale);
 
@@ -204,7 +203,9 @@ pub fn compose_frame(
     let mut zoomed_normal: Vec<OutputRenderElements> = Vec::new();
     let mut zoomed_widgets: Vec<OutputRenderElements> = Vec::new();
 
-    let blur_enabled = state.render.blur_down_shader.is_some() && state.render.blur_up_shader.is_some() && state.render.blur_mask_shader.is_some();
+    let blur_enabled = state.render.blur_down_shader.is_some()
+        && state.render.blur_up_shader.is_some()
+        && state.render.blur_mask_shader.is_some();
     let mut blur_requests: Vec<BlurRequestData> = Vec::new();
 
     let focused_surface = state
@@ -214,10 +215,14 @@ pub fn compose_frame(
         .map(|f| f.0);
 
     for window in state.space.elements().rev() {
-        let Some(loc) = state.space.element_location(window) else { continue };
+        let Some(loc) = state.space.element_location(window) else {
+            continue;
+        };
         let geom_loc = window.geometry().loc;
         let geom_size = window.geometry().size;
-        let Some(wl_surface) = window.wl_surface() else { continue; };
+        let Some(wl_surface) = window.wl_surface() else {
+            continue;
+        };
         let is_fullscreen = state.fullscreen.values().any(|fs| &fs.window == window);
         let has_ssd = !is_fullscreen && state.decorations.contains_key(&wl_surface.id());
 
@@ -243,10 +248,7 @@ pub fn compose_frame(
                 &state.config.decorations,
             )
         } else {
-            driftwm::config::effective_border_color(
-                applied.as_ref(),
-                &state.config.decorations,
-            )
+            driftwm::config::effective_border_color(applied.as_ref(), &state.config.decorations)
         };
         let effective_corner_radius = driftwm::config::effective_corner_radius(
             applied.as_ref(),
@@ -276,7 +278,9 @@ pub fn compose_frame(
             bbox.size.w += 2 * effective_bw;
             bbox.size.h += 2 * effective_bw;
         }
-        if !visible_rect.overlaps(bbox) { continue }
+        if !visible_rect.overlaps(bbox) {
+            continue;
+        }
 
         let render_loc: Point<f64, Logical> = Point::from((
             loc.x as f64 - geom_loc.x as f64 - camera.x,
@@ -287,8 +291,7 @@ pub fn compose_frame(
         });
         // Empty rect list = client explicitly opted out → treat as off.
         let client_blur = client_blur_rects.as_ref().is_some_and(|r| !r.is_empty());
-        let wants_blur =
-            blur_enabled && (applied.as_ref().is_some_and(|r| r.blur) || client_blur);
+        let wants_blur = blur_enabled && (applied.as_ref().is_some_and(|r| r.blur) || client_blur);
         let opacity = applied.as_ref().and_then(|r| r.opacity).unwrap_or(1.0);
 
         // Split elements: toplevel + subsurfaces get corner-clipped, popups
@@ -299,13 +302,23 @@ pub fn compose_frame(
         let loc_phys: Point<i32, Physical> = render_loc.to_physical_precise_round(scale);
         let (elems, popup_elems) = if let Some(toplevel) = window.toplevel() {
             let root = toplevel.wl_surface();
-            let top = smithay::backend::renderer::element::surface::render_elements_from_surface_tree::<
-                _, WaylandSurfaceRenderElement<GlesRenderer>,
-            >(renderer, root, loc_phys, scale, opacity as f32, Kind::Unspecified);
+            let top =
+                smithay::backend::renderer::element::surface::render_elements_from_surface_tree::<
+                    _,
+                    WaylandSurfaceRenderElement<GlesRenderer>,
+                >(
+                    renderer,
+                    root,
+                    loc_phys,
+                    scale,
+                    opacity as f32,
+                    Kind::Unspecified,
+                );
 
             let mut popups: Vec<WaylandSurfaceRenderElement<GlesRenderer>> = Vec::new();
             for (popup, popup_offset) in smithay::desktop::PopupManager::popups_for_surface(root) {
-                let offset: Point<i32, Physical> = (window.geometry().loc + popup_offset - popup.geometry().loc)
+                let offset: Point<i32, Physical> = (window.geometry().loc + popup_offset
+                    - popup.geometry().loc)
                     .to_physical_precise_round(scale);
                 popups.extend(smithay::backend::renderer::element::surface::render_elements_from_surface_tree::<
                     _, WaylandSurfaceRenderElement<GlesRenderer>,
@@ -315,12 +328,19 @@ pub fn compose_frame(
         } else {
             // No toplevel — render the window's surface tree directly.
             let elems = window.render_elements::<WaylandSurfaceRenderElement<GlesRenderer>>(
-                renderer, loc_phys, scale, opacity as f32,
+                renderer,
+                loc_phys,
+                scale,
+                opacity as f32,
             );
             (elems, Vec::new())
         };
 
-        let target = if is_widget { &mut zoomed_widgets } else { &mut zoomed_normal };
+        let target = if is_widget {
+            &mut zoomed_widgets
+        } else {
+            &mut zoomed_normal
+        };
         let elem_start = target.len();
         let mut shadow_count = 0usize;
 
@@ -347,12 +367,14 @@ pub fn compose_frame(
             }
 
             if let Some(deco) = state.decorations.get(&wl_surface.id()) {
-                let bar_loc: Point<f64, Logical> = Point::from((
-                    render_loc.x,
-                    render_loc.y - bar_height as f64,
-                ));
+                let bar_loc: Point<f64, Logical> =
+                    Point::from((render_loc.x, render_loc.y - bar_height as f64));
                 let bar_physical: Point<f64, Physical> = bar_loc.to_physical_precise_round(scale);
-                let bar_alpha = if opacity < 1.0 { Some(opacity as f32) } else { None };
+                let bar_alpha = if opacity < 1.0 {
+                    Some(opacity as f32)
+                } else {
+                    None
+                };
                 if let Ok(bar_elem) = MemoryRenderBufferRenderElement::from_buffer(
                     renderer,
                     bar_physical,
@@ -385,8 +407,13 @@ pub fn compose_frame(
                         Size::<f64, Logical>::from((wg.size.w as f64, wg.size.h as f64)),
                     );
                     push_corner_clipped_elements(
-                        target, elems, shader,
-                        geometry, [0.0, 0.0, radius, radius], zoom, output_scale,
+                        target,
+                        elems,
+                        shader,
+                        geometry,
+                        [0.0, 0.0, radius, radius],
+                        zoom,
+                        output_scale,
                     );
                 } else {
                     push_plain_elements(target, elems, zoom);
@@ -424,9 +451,7 @@ pub fn compose_frame(
             // so the damage tracker can skip unchanged regions. With a border,
             // footprint and corner radius grow by border_width so the shadow
             // grades from the border's outer perimeter (matches niri).
-            if effective_shadow
-                && let Some(shader) = state.render.shadow_shader.clone()
-            {
+            if effective_shadow && let Some(shader) = state.render.shadow_shader.clone() {
                 let bw = effective_bw as f64;
                 let body_logical: Rectangle<f64, Logical> = Rectangle::new(
                     (render_loc.x - bw, render_loc.y - bar_height as f64 - bw).into(),
@@ -475,8 +500,13 @@ pub fn compose_frame(
                     Size::<f64, Logical>::from((geo.size.w as f64, geo.size.h as f64)),
                 );
                 push_corner_clipped_elements(
-                    target, elems, shader,
-                    geometry, [radius, radius, radius, radius], zoom, output_scale,
+                    target,
+                    elems,
+                    shader,
+                    geometry,
+                    [radius, radius, radius, radius],
+                    zoom,
+                    output_scale,
                 );
 
                 if effective_bw > 0
@@ -500,9 +530,7 @@ pub fn compose_frame(
 
                 // Footprint and corner radius grow by border_width so the
                 // shadow grades from the border's outer edge, not the content edge.
-                if effective_shadow
-                    && let Some(shader) = state.render.shadow_shader.clone()
-                {
+                if effective_shadow && let Some(shader) = state.render.shadow_shader.clone() {
                     let bw = effective_bw as f64;
                     let body_logical: Rectangle<f64, Logical> = Rectangle::new(
                         (
@@ -510,11 +538,7 @@ pub fn compose_frame(
                             render_loc.y + geo.loc.y as f64 - bw,
                         )
                             .into(),
-                        (
-                            geom_size.w as f64 + 2.0 * bw,
-                            geom_size.h as f64 + 2.0 * bw,
-                        )
-                            .into(),
+                        (geom_size.w as f64 + 2.0 * bw, geom_size.h as f64 + 2.0 * bw).into(),
                     );
                     push_shadow_element(
                         target,
@@ -539,21 +563,21 @@ pub fn compose_frame(
 
         if wants_blur && (target.len() - elem_start - shadow_count) > 0 {
             let elem_count = target.len() - elem_start - shadow_count;
-            let screen_loc: Point<i32, Logical> = Point::from((
-                (render_loc.x * zoom) as i32,
-                (render_loc.y * zoom) as i32,
-            ));
+            let screen_loc: Point<i32, Logical> =
+                Point::from(((render_loc.x * zoom) as i32, (render_loc.y * zoom) as i32));
             let screen_size: Size<i32, Logical> = if has_ssd {
                 let bar = state.config.decorations.title_bar_height;
                 (
                     (geom_size.w as f64 * zoom).ceil() as i32,
                     ((geom_size.h + bar) as f64 * zoom).ceil() as i32,
-                ).into()
+                )
+                    .into()
             } else {
                 (
                     (geom_size.w as f64 * zoom).ceil() as i32,
                     (geom_size.h as f64 * zoom).ceil() as i32,
-                ).into()
+                )
+                    .into()
             };
             let screen_rect = Rectangle::new(
                 if has_ssd {
@@ -571,7 +595,8 @@ pub fn compose_frame(
                     ))
                 },
                 screen_size,
-            ).to_physical_precise_round(output_scale);
+            )
+            .to_physical_precise_round(output_scale);
 
             // Convert client blur region: surface-local Logical → mask-local
             // Physical at composite_scale = zoom × output_scale.
@@ -587,21 +612,26 @@ pub fn compose_frame(
                     let geo = window.geometry();
                     (-geo.loc.x as f64, -geo.loc.y as f64)
                 };
-                let win_bounds: Rectangle<i32, Physical> =
-                    Rectangle::from_size(screen_rect.size);
+                let win_bounds: Rectangle<i32, Physical> = Rectangle::from_size(screen_rect.size);
                 let mut out: Vec<Rectangle<i32, Physical>> = Vec::with_capacity(rects.len());
                 for r in rects.iter() {
                     let x1 = ((r.loc.x as f64 + offset_x) * composite_scale).round() as i32;
                     let y1 = ((r.loc.y as f64 + offset_y) * composite_scale).round() as i32;
-                    let x2 = (((r.loc.x + r.size.w) as f64 + offset_x) * composite_scale).round() as i32;
-                    let y2 = (((r.loc.y + r.size.h) as f64 + offset_y) * composite_scale).round() as i32;
+                    let x2 =
+                        (((r.loc.x + r.size.w) as f64 + offset_x) * composite_scale).round() as i32;
+                    let y2 =
+                        (((r.loc.y + r.size.h) as f64 + offset_y) * composite_scale).round() as i32;
                     let phys: Rectangle<i32, Physical> =
                         Rectangle::from_extremities((x1, y1), (x2, y2));
                     if let Some(clipped) = phys.intersection(win_bounds) {
                         out.push(clipped);
                     }
                 }
-                if out.is_empty() { None } else { Some(std::sync::Arc::new(out)) }
+                if out.is_empty() {
+                    None
+                } else {
+                    Some(std::sync::Arc::new(out))
+                }
             } else {
                 None
             };
@@ -618,7 +648,11 @@ pub fn compose_frame(
                     screen_rect,
                     elem_start,
                     elem_count,
-                    layer: if is_widget { BlurLayer::Widget } else { BlurLayer::Normal },
+                    layer: if is_widget {
+                        BlurLayer::Widget
+                    } else {
+                        BlurLayer::Normal
+                    },
                     region_rects,
                 });
             }
@@ -627,56 +661,58 @@ pub fn compose_frame(
 
     let canvas_layer_elements = build_canvas_layer_elements(state, renderer, output, camera, zoom);
 
-    let outline_elements = build_output_outline_elements(
-        state, renderer, output, camera, zoom, viewport_size,
-    );
+    let outline_elements =
+        build_output_outline_elements(state, renderer, output, camera, zoom, viewport_size);
 
-    let bg_elements: Vec<OutputRenderElements> =
-        if output_fullscreen {
-            vec![]
-        } else if let Some(cache) = state.render.cached_shader_chunks.get_mut(&output.name()) {
-            cache
-                .render_elements(visible_rect, renderer, camera, zoom)
-                .into_iter()
-                .map(OutputRenderElements::TileBgChunk)
-                .collect()
-        } else if let Some(cache) = state.render.cached_tile_chunks.get_mut(&output.name()) {
-            // 8 GLES uploads/frame: decode is off-thread, so render-time per
-            // blob is the only constraint. import_memory of a 256×256 RGBA8 is
-            // sub-ms on M1, ~2-3ms on weak iGPUs — 8 keeps upload under ~25ms on
-            // the slow path and drains a worker burst in one frame on fast
-            // hardware. Coarser-LOD overlays + fallback plane cover undrained.
-            cache.ensure_visible_loaded(visible_rect, renderer, zoom, 8);
-            tile_chunks::chunk_render_elements(cache, visible_rect, camera, zoom)
-                .into_iter()
-                .map(OutputRenderElements::TileBgChunk)
-                .collect()
-        } else if let Some(elem) = state.render.cached_bg_elements.get(&output.name()) {
-            vec![OutputRenderElements::Background(
-                RescaleRenderElement::from_element(
-                    elem.clone(),
-                    Point::<i32, Physical>::from((0, 0)),
-                    zoom,
-                ),
-            )]
-        } else if let Some(elem) = state.render.cached_tile_bg.get(&output.name()) {
-            vec![OutputRenderElements::TileBg(
-                RescaleRenderElement::from_element(
-                    elem.clone(),
-                    Point::<i32, Physical>::from((0, 0)),
-                    zoom,
-                ),
-            )]
-        } else if let Some(elem) = state.render.cached_wallpaper_bg.get(&output.name()) {
-            // Viewport-fixed: no zoom rescale, element area is already in output coords.
-            vec![OutputRenderElements::WallpaperBg(elem.clone())]
-        } else {
-            vec![]
-        };
+    let bg_elements: Vec<OutputRenderElements> = if output_fullscreen {
+        vec![]
+    } else if let Some(cache) = state.render.cached_shader_chunks.get_mut(&output.name()) {
+        cache
+            .render_elements(visible_rect, renderer, camera, zoom)
+            .into_iter()
+            .map(OutputRenderElements::TileBgChunk)
+            .collect()
+    } else if let Some(cache) = state.render.cached_tile_chunks.get_mut(&output.name()) {
+        // 8 GLES uploads/frame: decode is off-thread, so render-time per
+        // blob is the only constraint. import_memory of a 256×256 RGBA8 is
+        // sub-ms on M1, ~2-3ms on weak iGPUs — 8 keeps upload under ~25ms on
+        // the slow path and drains a worker burst in one frame on fast
+        // hardware. Coarser-LOD overlays + fallback plane cover undrained.
+        cache.ensure_visible_loaded(visible_rect, renderer, zoom, 8);
+        tile_chunks::chunk_render_elements(cache, visible_rect, camera, zoom)
+            .into_iter()
+            .map(OutputRenderElements::TileBgChunk)
+            .collect()
+    } else if let Some(elem) = state.render.cached_bg_elements.get(&output.name()) {
+        vec![OutputRenderElements::Background(
+            RescaleRenderElement::from_element(
+                elem.clone(),
+                Point::<i32, Physical>::from((0, 0)),
+                zoom,
+            ),
+        )]
+    } else if let Some(elem) = state.render.cached_tile_bg.get(&output.name()) {
+        vec![OutputRenderElements::TileBg(
+            RescaleRenderElement::from_element(
+                elem.clone(),
+                Point::<i32, Physical>::from((0, 0)),
+                zoom,
+            ),
+        )]
+    } else if let Some(elem) = state.render.cached_wallpaper_bg.get(&output.name()) {
+        // Viewport-fixed: no zoom rescale, element area is already in output coords.
+        vec![OutputRenderElements::WallpaperBg(elem.clone())]
+    } else {
+        vec![]
+    };
 
     let is_fullscreen = state.is_output_fullscreen(output);
     let (overlay_elements, overlay_blur) = build_layer_elements(
-        state, output, renderer, WlrLayer::Overlay, Some(BlurLayer::Overlay),
+        state,
+        output,
+        renderer,
+        WlrLayer::Overlay,
+        Some(BlurLayer::Overlay),
     );
     let (top_elements, top_blur) = if !is_fullscreen {
         build_layer_elements(state, output, renderer, WlrLayer::Top, Some(BlurLayer::Top))
@@ -695,9 +731,7 @@ pub fn compose_frame(
     let overlay_prefix = cursor_elements.len();
     let top_prefix = overlay_prefix + overlay_elements.len();
     let normal_prefix = top_prefix + top_elements.len();
-    let widget_prefix = normal_prefix
-        + zoomed_normal.len()
-        + canvas_layer_elements.len();
+    let widget_prefix = normal_prefix + zoomed_normal.len() + canvas_layer_elements.len();
 
     // Layer surfaces first (front-to-back), then windows.
     let mut all_blur_requests: Vec<BlurRequestData> = Vec::new();
@@ -731,16 +765,28 @@ pub fn compose_frame(
 
     if !all_blur_requests.is_empty() {
         process_blur_requests(
-            state, renderer, output, output_scale,
-            &mut all_elements, &all_blur_requests,
-            overlay_prefix, top_prefix, normal_prefix, widget_prefix,
+            state,
+            renderer,
+            output,
+            output_scale,
+            &mut all_elements,
+            &all_blur_requests,
+            overlay_prefix,
+            top_prefix,
+            normal_prefix,
+            widget_prefix,
         );
     }
 
     if blur_enabled {
-        let active_ids: std::collections::HashSet<_> =
-            all_blur_requests.iter().map(|r| r.surface_id.clone()).collect();
-        state.render.blur_cache.retain(|id, _| active_ids.contains(id));
+        let active_ids: std::collections::HashSet<_> = all_blur_requests
+            .iter()
+            .map(|r| r.surface_id.clone())
+            .collect();
+        state
+            .render
+            .blur_cache
+            .retain(|id, _| active_ids.contains(id));
     }
 
     // Error bar sits above every window and layer-shell surface but below the
@@ -764,17 +810,23 @@ fn build_output_outline_elements(
     viewport_size: Size<i32, Logical>,
 ) -> Vec<OutputRenderElements> {
     let thickness = state.config.output_outline.thickness;
-    if thickness <= 0 { return vec![]; }
+    if thickness <= 0 {
+        return vec![];
+    }
 
     let opacity = state.config.output_outline.opacity as f32;
-    if opacity <= 0.0 { return vec![]; }
+    if opacity <= 0.0 {
+        return vec![];
+    }
     let color = state.config.output_outline.color;
     let scale = output.current_scale().fractional_scale();
 
     let mut elements = Vec::new();
 
     for other in state.space.outputs() {
-        if *other == *output { continue }
+        if *other == *output {
+            continue;
+        }
 
         let (other_camera, other_zoom) = {
             let os = crate::state::output_state(other);
@@ -782,11 +834,8 @@ fn build_output_outline_elements(
         };
         let other_size = crate::state::output_logical_size(other);
 
-        let other_canvas = canvas::visible_canvas_rect(
-            other_camera.to_i32_round(),
-            other_size,
-            other_zoom,
-        );
+        let other_canvas =
+            canvas::visible_canvas_rect(other_camera.to_i32_round(), other_size, other_zoom);
 
         // Transform to screen coords on *this* output.
         let screen_x = ((other_canvas.loc.x as f64 - camera.x) * zoom) as i32;
@@ -796,13 +845,25 @@ fn build_output_outline_elements(
 
         let vp = Rectangle::from_size(viewport_size);
         let outline_rect = Rectangle::new((screen_x, screen_y).into(), (screen_w, screen_h).into());
-        if !vp.overlaps(outline_rect) { continue }
+        if !vp.overlaps(outline_rect) {
+            continue;
+        }
 
         let edges: [(i32, i32, i32, i32); 4] = [
-            (screen_x, screen_y, screen_w, thickness),                         // top
-            (screen_x, screen_y + screen_h - thickness, screen_w, thickness),  // bottom
-            (screen_x, screen_y, thickness, screen_h),                         // left
-            (screen_x + screen_w - thickness, screen_y, thickness, screen_h),  // right
+            (screen_x, screen_y, screen_w, thickness), // top
+            (
+                screen_x,
+                screen_y + screen_h - thickness,
+                screen_w,
+                thickness,
+            ), // bottom
+            (screen_x, screen_y, thickness, screen_h), // left
+            (
+                screen_x + screen_w - thickness,
+                screen_y,
+                thickness,
+                screen_h,
+            ), // right
         ];
 
         for (ex, ey, ew, eh) in edges {
@@ -810,7 +871,9 @@ fn build_output_outline_elements(
             let y0 = ey.max(0);
             let x1 = (ex + ew).min(viewport_size.w);
             let y1 = (ey + eh).min(viewport_size.h);
-            if x1 <= x0 || y1 <= y0 { continue }
+            if x1 <= x0 || y1 <= y0 {
+                continue;
+            }
 
             let w = x1 - x0;
             let h = y1 - y0;
@@ -832,7 +895,13 @@ fn build_output_outline_elements(
 
             let loc: Point<f64, Physical> = Point::from((x0, y0)).to_f64().to_physical(scale);
             if let Ok(elem) = MemoryRenderBufferRenderElement::from_buffer(
-                renderer, loc, &buf, Some(opacity), None, None, Kind::Unspecified,
+                renderer,
+                loc,
+                &buf,
+                Some(opacity),
+                None,
+                None,
+                Kind::Unspecified,
             ) {
                 elements.push(OutputRenderElements::Decoration(
                     PixelSnapRescaleElement::from_element(

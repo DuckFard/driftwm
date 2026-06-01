@@ -50,9 +50,7 @@ use std::time::Instant;
 
 use driftwm::config::Config;
 
-use super::{
-    CursorState, DriftWm, RenderCache, SessionLock, client_is_unrestricted,
-};
+use super::{CursorState, DriftWm, RenderCache, SessionLock, client_is_unrestricted};
 
 impl DriftWm {
     pub fn new(
@@ -65,8 +63,7 @@ impl DriftWm {
         // loop on completion to mark outputs dirty: udev renders are VBlank-gated,
         // so a bar drawn textless during the scan would otherwise stay blank
         // until some unrelated frame.
-        let (font_ping, font_ping_source) =
-            make_ping().expect("create font-ready ping");
+        let (font_ping, font_ping_source) = make_ping().expect("create font-ready ping");
         loop_handle
             .insert_source(font_ping_source, |_, _, data: &mut DriftWm| {
                 data.mark_all_dirty();
@@ -132,11 +129,10 @@ impl DriftWm {
             smithay::wayland::foreign_toplevel_list::ForeignToplevelListState::new_with_filter::<
                 Self,
             >(&dh, client_is_unrestricted);
-        let screencopy_state =
-            driftwm::protocols::screencopy::ScreencopyManagerState::new::<Self, _>(
-                &dh,
-                client_is_unrestricted,
-            );
+        let screencopy_state = driftwm::protocols::screencopy::ScreencopyManagerState::new::<Self, _>(
+            &dh,
+            client_is_unrestricted,
+        );
         let image_capture_source_state =
             smithay::wayland::image_capture_source::ImageCaptureSourceState::new();
         let output_capture_source_state =
@@ -159,11 +155,10 @@ impl DriftWm {
                 &dh,
                 client_is_unrestricted,
             );
-        let output_power_state =
-            driftwm::protocols::output_power::OutputPowerState::new::<Self, _>(
-                &dh,
-                client_is_unrestricted,
-            );
+        let output_power_state = driftwm::protocols::output_power::OutputPowerState::new::<Self, _>(
+            &dh,
+            client_is_unrestricted,
+        );
         let session_lock_manager_state =
             SessionLockManagerState::new::<Self, _>(&dh, client_is_unrestricted);
         let gamma_control_manager_state =

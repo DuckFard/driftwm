@@ -9,11 +9,9 @@ use std::path::PathBuf;
 
 use calloop::LoopSignal;
 use smithay::backend::allocator::Fourcc;
-use smithay::backend::renderer::{ImportMem, Texture};
 use smithay::backend::renderer::element::Kind;
-use smithay::backend::renderer::gles::{
-    GlesRenderer, GlesTexProgram, GlesTexture, Uniform,
-};
+use smithay::backend::renderer::gles::{GlesRenderer, GlesTexProgram, GlesTexture, Uniform};
+use smithay::backend::renderer::{ImportMem, Texture};
 use smithay::utils::{Buffer, Logical, Physical, Point, Rectangle, Size};
 
 use super::tile_chunks_tiff::TiffSource;
@@ -140,10 +138,7 @@ impl BgChunkCache {
                 ));
             }
         }
-        let lod0 = *source
-            .lods()
-            .first()
-            .ok_or("TIFF has no LOD levels")?;
+        let lod0 = *source.lods().first().ok_or("TIFF has no LOD levels")?;
         let image_dims = lod0.image_dims;
         let n_on_disk = source.lods().len();
         let (mut chunk_canvas_sizes, mut aggregations) = derive_chunk_layout(&source)?;
@@ -191,10 +186,7 @@ impl BgChunkCache {
         drop(source);
         let pool = WorkerPool::spawn(path, loop_signal)?;
 
-        let image_position = Point::from((
-            -(image_dims.0 as i32) / 2,
-            -(image_dims.1 as i32) / 2,
-        ));
+        let image_position = Point::from((-(image_dims.0 as i32) / 2, -(image_dims.1 as i32) / 2));
         Ok(Self {
             image_dims,
             image_position,
@@ -293,12 +285,8 @@ impl BgChunkCache {
         if target_lod < coarsest {
             for lod in (target_lod..coarsest).rev() {
                 let size = self.chunk_canvas_size_at(lod);
-                let visible = visibility_query(
-                    viewport,
-                    self.image_position,
-                    self.image_dims,
-                    size,
-                );
+                let visible =
+                    visibility_query(viewport, self.image_position, self.image_dims, size);
                 let mut at_lod: HashSet<(i32, i32)> = HashSet::with_capacity(visible.len());
                 for (cx, cy, _kx, _ky) in &visible {
                     at_lod.insert((*cx, *cy));
@@ -312,8 +300,12 @@ impl BgChunkCache {
                     {
                         continue;
                     }
-                    let Ok(cx_u) = u32::try_from(cx) else { continue };
-                    let Ok(cy_u) = u32::try_from(cy) else { continue };
+                    let Ok(cx_u) = u32::try_from(cx) else {
+                        continue;
+                    };
+                    let Ok(cy_u) = u32::try_from(cy) else {
+                        continue;
+                    };
                     self.in_flight.insert(key);
                     self.pool.enqueue(TileRequest {
                         lod,
@@ -385,7 +377,9 @@ impl BgChunkCache {
                         Err(e) => {
                             tracing::warn!(
                                 "chunked tile (LOD {}, {},{}) import_memory: {e}",
-                                resp.req.lod, resp.req.cx, resp.req.cy
+                                resp.req.lod,
+                                resp.req.cx,
+                                resp.req.cy
                             );
                             self.failed.insert(key);
                         }
@@ -394,7 +388,9 @@ impl BgChunkCache {
                 Err(e) => {
                     tracing::warn!(
                         "chunked tile (LOD {}, {},{}) decode: {e}",
-                        resp.req.lod, resp.req.cx, resp.req.cy
+                        resp.req.lod,
+                        resp.req.cx,
+                        resp.req.cy
                     );
                     self.failed.insert(key);
                 }
@@ -420,9 +416,8 @@ impl BgChunkCache {
         for key in &evicted_set {
             self.chunks.remove(key);
         }
-        self.chunk_elements.retain(|elem_key, _| {
-            !evicted_set.contains(&(elem_key.0, elem_key.1, elem_key.2))
-        });
+        self.chunk_elements
+            .retain(|elem_key, _| !evicted_set.contains(&(elem_key.0, elem_key.1, elem_key.2)));
         tracing::debug!(
             "chunked tile-bg: evicted {} tile(s), vram_bytes now {} / {}",
             evicted.len(),
@@ -430,7 +425,6 @@ impl BgChunkCache {
             self.vram_budget_bytes
         );
     }
-
 }
 
 /// Returns evicted keys; caller drops them from the parallel texture map.
@@ -531,8 +525,7 @@ fn derive_chunk_layout(source: &TiffSource) -> Result<(Vec<i32>, Vec<u32>), Stri
             break;
         }
     }
-    let aggregations =
-        compute_aggregations(&raw, TARGET_CHUNK_CANVAS, LOD0_TARGET_CHUNK_CANVAS);
+    let aggregations = compute_aggregations(&raw, TARGET_CHUNK_CANVAS, LOD0_TARGET_CHUNK_CANVAS);
     let sizes: Vec<i32> = raw
         .iter()
         .zip(&aggregations)
@@ -545,11 +538,7 @@ fn derive_chunk_layout(source: &TiffSource) -> Result<(Vec<i32>, Vec<u32>), Stri
 /// `raw_size` so the final chunk size never exceeds the target, then clamps to
 /// ≥ 1 (guarding raw_size == 0). LOD 0 uses `lod0_target` (smaller — see
 /// [`LOD0_TARGET_CHUNK_CANVAS`]); every coarser LOD uses `target`.
-pub(crate) fn compute_aggregations(
-    raw_sizes: &[i32],
-    target: i32,
-    lod0_target: i32,
-) -> Vec<u32> {
+pub(crate) fn compute_aggregations(raw_sizes: &[i32], target: i32, lod0_target: i32) -> Vec<u32> {
     let mut agg = vec![1u32; raw_sizes.len()];
     for i in 0..raw_sizes.len() {
         let t = if i == 0 { lod0_target } else { target };
@@ -616,8 +605,7 @@ pub(crate) fn chunks_intersecting(
     let cy_min = clip_min_y / chunk_canvas_size;
     let cy_max = (clip_max_y - 1) / chunk_canvas_size;
 
-    let mut chunks =
-        Vec::with_capacity(((cx_max - cx_min + 1) * (cy_max - cy_min + 1)) as usize);
+    let mut chunks = Vec::with_capacity(((cx_max - cx_min + 1) * (cy_max - cy_min + 1)) as usize);
     for cy in cy_min..=cy_max {
         for cx in cx_min..=cx_max {
             chunks.push((cx, cy));
@@ -670,21 +658,17 @@ pub fn chunk_render_elements(
     {
         // Static plot names (`new_leak`) so each survives across frames as the
         // same line on the Tracy timeline.
-        static VRAM_PLOT: std::sync::OnceLock<tracy_client::PlotName> =
-            std::sync::OnceLock::new();
+        static VRAM_PLOT: std::sync::OnceLock<tracy_client::PlotName> = std::sync::OnceLock::new();
         static IN_FLIGHT_PLOT: std::sync::OnceLock<tracy_client::PlotName> =
             std::sync::OnceLock::new();
         static TARGET_LOD_PLOT: std::sync::OnceLock<tracy_client::PlotName> =
             std::sync::OnceLock::new();
-        let vram = VRAM_PLOT.get_or_init(|| {
-            tracy_client::PlotName::new_leak("bg_chunks.vram_mb".to_string())
-        });
-        let in_flight = IN_FLIGHT_PLOT.get_or_init(|| {
-            tracy_client::PlotName::new_leak("bg_chunks.in_flight".to_string())
-        });
-        let target = TARGET_LOD_PLOT.get_or_init(|| {
-            tracy_client::PlotName::new_leak("bg_chunks.target_lod".to_string())
-        });
+        let vram = VRAM_PLOT
+            .get_or_init(|| tracy_client::PlotName::new_leak("bg_chunks.vram_mb".to_string()));
+        let in_flight = IN_FLIGHT_PLOT
+            .get_or_init(|| tracy_client::PlotName::new_leak("bg_chunks.in_flight".to_string()));
+        let target = TARGET_LOD_PLOT
+            .get_or_init(|| tracy_client::PlotName::new_leak("bg_chunks.target_lod".to_string()));
         if let Some(client) = tracy_client::Client::running() {
             client.plot(*vram, (cache.vram_bytes as f64) / (1024.0 * 1024.0));
             client.plot(*in_flight, cache.in_flight.len() as f64);
@@ -786,19 +770,13 @@ pub fn chunk_render_elements(
     let canvas_w = viewport.size.w.max(1);
     let canvas_h = viewport.size.h.max(1);
     let fallback_area = Rectangle::new(
-        Point::<i32, Logical>::from((
-            viewport.loc.x - camera_i.x,
-            viewport.loc.y - camera_i.y,
-        )),
+        Point::<i32, Logical>::from((viewport.loc.x - camera_i.x, viewport.loc.y - camera_i.y)),
         Size::from((canvas_w, canvas_h)),
     );
     let fallback_opaque = vec![fallback_area];
     let fallback_uniforms = vec![
         Uniform::new("u_camera", (camera.x as f32, camera.y as f32)),
-        Uniform::new(
-            "u_tile_size",
-            (image_dims.0 as f32, image_dims.1 as f32),
-        ),
+        Uniform::new("u_tile_size", (image_dims.0 as f32, image_dims.1 as f32)),
         Uniform::new("u_output_size", (canvas_w as f32, canvas_h as f32)),
     ];
     let fallback_tex_w = cache.fallback_texture.width() as i32;
@@ -807,8 +785,7 @@ pub fn chunk_render_elements(
     // constant). Re-push — and take its full-viewport commit bump — only when
     // one changed; else a static-camera frame (cursor move, client commit, tile
     // upload) would needlessly repaint the whole bg.
-    let needs_uniform_update =
-        cache.fallback_uniform_state != Some((camera, canvas_w, canvas_h));
+    let needs_uniform_update = cache.fallback_uniform_state != Some((camera, canvas_w, canvas_h));
     let fb = cache.fallback_element.get_or_insert_with(|| {
         TileShaderElement::new(
             cache.fallback_shader.clone(),
@@ -874,11 +851,11 @@ pub(crate) fn visibility_query(
     let mut out = Vec::new();
     for ky in ky_range {
         for kx in kx_range.clone() {
-            let instance_origin = Point::from((
-                image_position.x + kx * img_w,
-                image_position.y + ky * img_h,
-            ));
-            for (cx, cy) in chunks_intersecting(viewport, instance_origin, chunk_canvas_size, image_dims) {
+            let instance_origin =
+                Point::from((image_position.x + kx * img_w, image_position.y + ky * img_h));
+            for (cx, cy) in
+                chunks_intersecting(viewport, instance_origin, chunk_canvas_size, image_dims)
+            {
                 out.push((cx, cy, kx, ky));
             }
         }
@@ -937,43 +914,78 @@ mod tests {
 
     #[test]
     fn chunks_intersecting_inside_single_chunk() {
-        let chunks = chunks_intersecting(rect(100, 100, 100, 100), Point::from((0, 0)), 1024, (2048, 2048));
+        let chunks = chunks_intersecting(
+            rect(100, 100, 100, 100),
+            Point::from((0, 0)),
+            1024,
+            (2048, 2048),
+        );
         assert_eq!(chunks, vec![(0, 0)]);
     }
 
     #[test]
     fn chunks_intersecting_spans_horizontal_pair() {
-        let chunks = chunks_intersecting(rect(1000, 100, 100, 100), Point::from((0, 0)), 1024, (2048, 2048));
+        let chunks = chunks_intersecting(
+            rect(1000, 100, 100, 100),
+            Point::from((0, 0)),
+            1024,
+            (2048, 2048),
+        );
         assert_eq!(chunks, vec![(0, 0), (1, 0)]);
     }
 
     #[test]
     fn chunks_intersecting_spans_2x2() {
-        let chunks = chunks_intersecting(rect(1000, 1000, 100, 100), Point::from((0, 0)), 1024, (2048, 2048));
+        let chunks = chunks_intersecting(
+            rect(1000, 1000, 100, 100),
+            Point::from((0, 0)),
+            1024,
+            (2048, 2048),
+        );
         assert_eq!(chunks, vec![(0, 0), (1, 0), (0, 1), (1, 1)]);
     }
 
     #[test]
     fn chunks_intersecting_clips_past_image_edge() {
-        let chunks = chunks_intersecting(rect(1500, 0, 1000, 100), Point::from((0, 0)), 1024, (2048, 2048));
+        let chunks = chunks_intersecting(
+            rect(1500, 0, 1000, 100),
+            Point::from((0, 0)),
+            1024,
+            (2048, 2048),
+        );
         assert_eq!(chunks, vec![(1, 0)]);
     }
 
     #[test]
     fn chunks_intersecting_viewport_entirely_past_image() {
-        let chunks = chunks_intersecting(rect(3000, 0, 100, 100), Point::from((0, 0)), 1024, (2048, 2048));
+        let chunks = chunks_intersecting(
+            rect(3000, 0, 100, 100),
+            Point::from((0, 0)),
+            1024,
+            (2048, 2048),
+        );
         assert!(chunks.is_empty());
     }
 
     #[test]
     fn chunks_intersecting_with_instance_origin() {
-        let chunks = chunks_intersecting(rect(1100, 100, 100, 100), Point::from((1000, 0)), 1024, (2048, 2048));
+        let chunks = chunks_intersecting(
+            rect(1100, 100, 100, 100),
+            Point::from((1000, 0)),
+            1024,
+            (2048, 2048),
+        );
         assert_eq!(chunks, vec![(0, 0)]);
     }
 
     #[test]
     fn chunks_intersecting_partial_edge_chunk() {
-        let chunks = chunks_intersecting(rect(1200, 100, 100, 100), Point::from((0, 0)), 1024, (1500, 1500));
+        let chunks = chunks_intersecting(
+            rect(1200, 100, 100, 100),
+            Point::from((0, 0)),
+            1024,
+            (1500, 1500),
+        );
         assert_eq!(chunks, vec![(1, 0)]);
     }
 
@@ -1045,13 +1057,23 @@ mod tests {
 
     #[test]
     fn visibility_query_simple_single_instance() {
-        let v = visibility_query(rect(100, 100, 100, 100), Point::from((0, 0)), (2048, 2048), 1024);
+        let v = visibility_query(
+            rect(100, 100, 100, 100),
+            Point::from((0, 0)),
+            (2048, 2048),
+            1024,
+        );
         assert_eq!(v, vec![(0, 0, 0, 0)]);
     }
 
     #[test]
     fn visibility_query_spans_two_instances_horizontally() {
-        let v = visibility_query(rect(2000, 100, 100, 100), Point::from((0, 0)), (2048, 2048), 1024);
+        let v = visibility_query(
+            rect(2000, 100, 100, 100),
+            Point::from((0, 0)),
+            (2048, 2048),
+            1024,
+        );
         assert!(v.contains(&(1, 0, 0, 0)));
         assert!(v.contains(&(0, 0, 1, 0)));
         assert_eq!(v.len(), 2);
@@ -1059,13 +1081,23 @@ mod tests {
 
     #[test]
     fn visibility_query_empty_viewport_empty_result() {
-        let v = visibility_query(rect(100, 100, 0, 0), Point::from((0, 0)), (2048, 2048), 1024);
+        let v = visibility_query(
+            rect(100, 100, 0, 0),
+            Point::from((0, 0)),
+            (2048, 2048),
+            1024,
+        );
         assert!(v.is_empty());
     }
 
     #[test]
     fn visibility_query_negative_viewport_with_wrap() {
-        let v = visibility_query(rect(-100, 0, 200, 100), Point::from((0, 0)), (2048, 2048), 1024);
+        let v = visibility_query(
+            rect(-100, 0, 200, 100),
+            Point::from((0, 0)),
+            (2048, 2048),
+            1024,
+        );
         assert!(v.contains(&(1, 0, -1, 0)));
         assert!(v.contains(&(0, 0, 0, 0)));
         assert_eq!(v.len(), 2);
@@ -1127,12 +1159,10 @@ mod tests {
 
     #[test]
     fn evict_lru_noop_under_budget() {
-        let mut m: HashMap<(u32, i32, i32), ChunkMeta> = [
-            ((0, 0, 0), meta(10, 100)),
-            ((0, 1, 0), meta(20, 100)),
-        ]
-        .into_iter()
-        .collect();
+        let mut m: HashMap<(u32, i32, i32), ChunkMeta> =
+            [((0, 0, 0), meta(10, 100)), ((0, 1, 0), meta(20, 100))]
+                .into_iter()
+                .collect();
         let mut bytes: u64 = 200;
         let ev = evict_lru_to_budget(&mut m, &mut bytes, 1000);
         assert!(ev.is_empty());
@@ -1160,12 +1190,10 @@ mod tests {
 
     #[test]
     fn evict_lru_stops_at_budget_boundary() {
-        let mut m: HashMap<(u32, i32, i32), ChunkMeta> = [
-            ((0, 0, 0), meta(5, 100)),
-            ((0, 1, 0), meta(7, 100)),
-        ]
-        .into_iter()
-        .collect();
+        let mut m: HashMap<(u32, i32, i32), ChunkMeta> =
+            [((0, 0, 0), meta(5, 100)), ((0, 1, 0), meta(7, 100))]
+                .into_iter()
+                .collect();
         let mut bytes: u64 = 200;
         let ev = evict_lru_to_budget(&mut m, &mut bytes, 100);
         assert_eq!(ev, vec![(0, 0, 0)]);
@@ -1197,12 +1225,10 @@ mod tests {
     fn evict_lru_ties_preserve_at_least_one() {
         // `sort_unstable_by_key` is non-deterministic on ties, but the per-
         // iteration budget check guarantees we don't over-evict.
-        let mut m: HashMap<(u32, i32, i32), ChunkMeta> = [
-            ((0, 0, 0), meta(5, 100)),
-            ((0, 1, 0), meta(5, 100)),
-        ]
-        .into_iter()
-        .collect();
+        let mut m: HashMap<(u32, i32, i32), ChunkMeta> =
+            [((0, 0, 0), meta(5, 100)), ((0, 1, 0), meta(5, 100))]
+                .into_iter()
+                .collect();
         let mut bytes: u64 = 200;
         let ev = evict_lru_to_budget(&mut m, &mut bytes, 100);
         assert_eq!(ev.len(), 1);

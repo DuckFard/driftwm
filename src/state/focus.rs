@@ -16,8 +16,8 @@ use smithay::{
         pointer::{
             AxisFrame, ButtonEvent, GestureHoldBeginEvent, GestureHoldEndEvent,
             GesturePinchBeginEvent, GesturePinchEndEvent, GesturePinchUpdateEvent,
-            GestureSwipeBeginEvent, GestureSwipeEndEvent, GestureSwipeUpdateEvent,
-            MotionEvent, PointerTarget, RelativeMotionEvent,
+            GestureSwipeBeginEvent, GestureSwipeEndEvent, GestureSwipeUpdateEvent, MotionEvent,
+            PointerTarget, RelativeMotionEvent,
         },
         touch::{
             DownEvent as TouchDownEvent, MotionEvent as TouchMotionEvent, TouchTarget,
@@ -205,23 +205,11 @@ impl PointerTarget<DriftWm> for FocusTarget {
 }
 
 impl TouchTarget<DriftWm> for FocusTarget {
-    fn down(
-        &self,
-        seat: &Seat<DriftWm>,
-        data: &mut DriftWm,
-        event: &TouchDownEvent,
-        seq: Serial,
-    ) {
+    fn down(&self, seat: &Seat<DriftWm>, data: &mut DriftWm, event: &TouchDownEvent, seq: Serial) {
         <WlSurface as TouchTarget<DriftWm>>::down(&self.0, seat, data, event, seq);
     }
 
-    fn up(
-        &self,
-        seat: &Seat<DriftWm>,
-        data: &mut DriftWm,
-        event: &TouchUpEvent,
-        seq: Serial,
-    ) {
+    fn up(&self, seat: &Seat<DriftWm>, data: &mut DriftWm, event: &TouchUpEvent, seq: Serial) {
         <WlSurface as TouchTarget<DriftWm>>::up(&self.0, seat, data, event, seq);
     }
 
@@ -269,7 +257,10 @@ where
     D: SeatHandler + smithay::wayland::selection::data_device::DataDeviceHandler + 'static,
     WlSurface: DndFocus<D>,
 {
-    type OfferData<S> = <WlSurface as DndFocus<D>>::OfferData<S> where S: Source;
+    type OfferData<S>
+        = <WlSurface as DndFocus<D>>::OfferData<S>
+    where
+        S: Source;
 
     fn enter<S: Source>(
         &self,
@@ -294,11 +285,21 @@ where
         <WlSurface as DndFocus<D>>::motion(&self.0, data, offer, seat, location, time)
     }
 
-    fn leave<S: Source>(&self, data: &mut D, offer: Option<&mut Self::OfferData<S>>, seat: &Seat<D>) {
+    fn leave<S: Source>(
+        &self,
+        data: &mut D,
+        offer: Option<&mut Self::OfferData<S>>,
+        seat: &Seat<D>,
+    ) {
         <WlSurface as DndFocus<D>>::leave(&self.0, data, offer, seat)
     }
 
-    fn drop<S: Source>(&self, data: &mut D, offer: Option<&mut Self::OfferData<S>>, seat: &Seat<D>) {
+    fn drop<S: Source>(
+        &self,
+        data: &mut D,
+        offer: Option<&mut Self::OfferData<S>>,
+        seat: &Seat<D>,
+    ) {
         <WlSurface as DndFocus<D>>::drop(&self.0, data, offer, seat)
     }
 }

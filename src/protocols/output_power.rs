@@ -75,7 +75,8 @@ pub struct OutputPowerData {
     output: WeakOutput,
 }
 
-impl<D> GlobalDispatch<ZwlrOutputPowerManagerV1, OutputPowerManagerGlobalData, D> for OutputPowerState
+impl<D> GlobalDispatch<ZwlrOutputPowerManagerV1, OutputPowerManagerGlobalData, D>
+    for OutputPowerState
 where
     D: GlobalDispatch<ZwlrOutputPowerManagerV1, OutputPowerManagerGlobalData>
         + Dispatch<ZwlrOutputPowerManagerV1, ()>

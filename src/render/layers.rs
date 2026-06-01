@@ -73,7 +73,9 @@ fn push_layer_chrome(
     // above the (possibly corner-clipped) surface body and any border/shadow.
     push_plain(target, popup_elements);
 
-    if corner_radius > 0 && let Some(ref ccs) = corner_clip_shader {
+    if corner_radius > 0
+        && let Some(ref ccs) = corner_clip_shader
+    {
         let r = corner_radius as f32;
         super::push_corner_clipped_elements(
             target,
@@ -90,7 +92,9 @@ fn push_layer_chrome(
     let chrome_count = target.len() - chrome_start;
 
     // Layers don't keyboard-focus as a "current window" — always unfocused color.
-    if border_width > 0 && let Some(ref bs) = border_shader {
+    if border_width > 0
+        && let Some(ref bs) = border_shader
+    {
         super::shaders::push_border_element(
             target,
             &mut state.render.border_cache,
@@ -154,7 +158,10 @@ fn collect_layer_popup_elements(
         // at fractional output scales.
         let offset: Point<i32, Physical> =
             (popup_offset - popup.geometry().loc).to_physical_precise_round(scale);
-        popups.extend(render_elements_from_surface_tree::<_, WaylandSurfaceRenderElement<GlesRenderer>>(
+        popups.extend(render_elements_from_surface_tree::<
+            _,
+            WaylandSurfaceRenderElement<GlesRenderer>,
+        >(
             renderer,
             popup.wl_surface(),
             parent_loc + offset,
@@ -192,8 +199,8 @@ pub(super) fn build_canvas_layer_elements(
             }
             let rel_x = pos.x as f64 - camera.x;
             let rel_y = pos.y as f64 - camera.y;
-            let physical_loc = Point::<f64, Logical>::from((rel_x, rel_y))
-                .to_physical_precise_round(output_scale);
+            let physical_loc =
+                Point::<f64, Logical>::from((rel_x, rel_y)).to_physical_precise_round(output_scale);
             let inner_logical: Rectangle<f64, Logical> = Rectangle::new(
                 (rel_x + bbox.loc.x as f64, rel_y + bbox.loc.y as f64).into(),
                 (bbox.size.w as f64, bbox.size.h as f64).into(),
@@ -220,17 +227,15 @@ pub(super) fn build_canvas_layer_elements(
         let opacity = applied.as_ref().and_then(|r| r.opacity).unwrap_or(1.0);
 
         let wl_surface = state.canvas_layers[idx].surface.wl_surface().clone();
-        let surface_elements = render_elements_from_surface_tree::<
-            _,
-            WaylandSurfaceRenderElement<GlesRenderer>,
-        >(
-            renderer,
-            &wl_surface,
-            physical_loc,
-            scale,
-            opacity as f32,
-            Kind::Unspecified,
-        );
+        let surface_elements =
+            render_elements_from_surface_tree::<_, WaylandSurfaceRenderElement<GlesRenderer>>(
+                renderer,
+                &wl_surface,
+                physical_loc,
+                scale,
+                opacity as f32,
+                Kind::Unspecified,
+            );
         let popup_elements = collect_layer_popup_elements(
             renderer,
             &wl_surface,
@@ -308,25 +313,18 @@ pub(super) fn build_layer_elements(
         // the bar itself — popups (tray menus, dropdowns, tooltips) can sit
         // outside the bar's geometry and must not be cropped to it.
         let wl_surface = surface.wl_surface();
-        let surface_elements = render_elements_from_surface_tree::<
-            _,
-            WaylandSurfaceRenderElement<GlesRenderer>,
-        >(
-            renderer,
-            wl_surface,
-            loc,
-            scale,
-            opacity as f32,
-            Kind::Unspecified,
-        );
+        let surface_elements =
+            render_elements_from_surface_tree::<_, WaylandSurfaceRenderElement<GlesRenderer>>(
+                renderer,
+                wl_surface,
+                loc,
+                scale,
+                opacity as f32,
+                Kind::Unspecified,
+            );
         let surface_has_buffer = !surface_elements.is_empty();
-        let popup_elements = collect_layer_popup_elements(
-            renderer,
-            wl_surface,
-            loc,
-            scale,
-            opacity as f32,
-        );
+        let popup_elements =
+            collect_layer_popup_elements(renderer, wl_surface, loc, scale, opacity as f32);
 
         let surface_id = wl_surface.id();
         let inner_logical: Rectangle<f64, Logical> = Rectangle::new(

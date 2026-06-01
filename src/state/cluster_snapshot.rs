@@ -145,14 +145,28 @@ impl ClusterResizeSnapshot {
         // Reconstruct primary's current rect from frozen initial + active
         // edges + deltas, so phase 2.5 can push members.
         let mut p_cur = self.primary_rect;
-        if self.resize_edges & 8 != 0 { p_cur.x_high += width_delta as f64; }
-        if self.resize_edges & 4 != 0 { p_cur.x_low -= width_delta as f64; }
-        if self.resize_edges & 2 != 0 { p_cur.y_high += height_delta as f64; }
-        if self.resize_edges & 1 != 0 { p_cur.y_low -= height_delta as f64; }
+        if self.resize_edges & 8 != 0 {
+            p_cur.x_high += width_delta as f64;
+        }
+        if self.resize_edges & 4 != 0 {
+            p_cur.x_low -= width_delta as f64;
+        }
+        if self.resize_edges & 2 != 0 {
+            p_cur.y_high += height_delta as f64;
+        }
+        if self.resize_edges & 1 != 0 {
+            p_cur.y_low -= height_delta as f64;
+        }
         let primary = Some((self.primary_rect, p_cur));
 
-        let (shifts, new_bonds) =
-            resolve_cluster_shifts(&classifications, width_delta, height_delta, gap, &self.bonds, primary);
+        let (shifts, new_bonds) = resolve_cluster_shifts(
+            &classifications,
+            width_delta,
+            height_delta,
+            gap,
+            &self.bonds,
+            primary,
+        );
         for bond in new_bonds {
             if self.bonds_set.insert(bond) {
                 self.bonds.push(bond);
@@ -164,10 +178,7 @@ impl ClusterResizeSnapshot {
 
 /// Snapshot for a move drag: members carry canvas-offset-from-primary;
 /// surfaces are the exclude set for `snap_targets`.
-pub type ClusterDragSnapshot = (
-    Vec<(Window, Point<i32, Logical>)>,
-    HashSet<WlSurface>,
-);
+pub type ClusterDragSnapshot = (Vec<(Window, Point<i32, Logical>)>, HashSet<WlSurface>);
 
 impl DriftWm {
     /// Snap target rects for all windows except `primary` and
@@ -273,8 +284,8 @@ impl DriftWm {
         window: &Window,
         edges: xdg_toplevel::ResizeEdge,
     ) -> ClusterResizeSnapshot {
-        use driftwm::layout::cluster::{Side, adjacent_side, cluster_of};
         use crate::grabs::{has_bottom, has_left, has_right, has_top};
+        use driftwm::layout::cluster::{Side, adjacent_side, cluster_of};
         use driftwm::layout::snap::SnapRect;
 
         let rects = self.all_windows_with_snap_rects();
@@ -283,11 +294,7 @@ impl DriftWm {
 
         // Primary's SnapRect for downstream filter; bail empty if absent
         // (widget, unmapped).
-        let Some(primary_rect) = rects
-            .iter()
-            .find(|(w, _)| w == window)
-            .map(|(_, r)| *r)
-        else {
+        let Some(primary_rect) = rects.iter().find(|(w, _)| w == window).map(|(_, r)| *r) else {
             return ClusterResizeSnapshot::empty();
         };
 
@@ -298,8 +305,7 @@ impl DriftWm {
         let compute_shift_set = |side: Side| -> HashSet<Window> {
             // Step 1: direct neighbors of primary on this side.
             let mut set: HashSet<Window> = HashSet::new();
-            let mut queue: std::collections::VecDeque<Window> =
-                std::collections::VecDeque::new();
+            let mut queue: std::collections::VecDeque<Window> = std::collections::VecDeque::new();
             for (w, r) in &rects {
                 if w == window {
                     continue;
@@ -425,10 +431,7 @@ impl DriftWm {
 /// mutable borrow on another `DriftWm` field (disjoint borrow workaround).
 pub(crate) fn snap_targets_impl(
     space: &Space<Window>,
-    decorations: &HashMap<
-        smithay::reexports::wayland_server::backend::ObjectId,
-        WindowDecoration,
-    >,
+    decorations: &HashMap<smithay::reexports::wayland_server::backend::ObjectId, WindowDecoration>,
     decoration_config: &driftwm::config::DecorationConfig,
     primary: &WlSurface,
     cluster_excludes: &HashSet<WlSurface>,
@@ -468,10 +471,7 @@ pub(crate) fn snap_targets_impl(
 /// widgets / unmapped / surfaceless.
 fn window_snap_rect(
     space: &Space<Window>,
-    decorations: &HashMap<
-        smithay::reexports::wayland_server::backend::ObjectId,
-        WindowDecoration,
-    >,
+    decorations: &HashMap<smithay::reexports::wayland_server::backend::ObjectId, WindowDecoration>,
     decoration_config: &driftwm::config::DecorationConfig,
     w: &Window,
 ) -> Option<(WlSurface, driftwm::layout::snap::SnapRect)> {
@@ -491,8 +491,8 @@ fn window_snap_rect(
         applied.as_ref().and_then(|r| r.decoration.as_ref()),
         &decoration_config.default_mode,
     );
-    let bw = driftwm::config::effective_border_width(applied.as_ref(), mode, decoration_config)
-        as f64;
+    let bw =
+        driftwm::config::effective_border_width(applied.as_ref(), mode, decoration_config) as f64;
     Some((
         surface,
         driftwm::layout::snap::SnapRect {

@@ -47,6 +47,7 @@ use std::time::Instant;
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::gles::GlesTexture;
 use smithay::utils::Physical;
+use smithay::wayland::background_effect::BackgroundEffectState;
 use smithay::wayland::dmabuf::{DmabufGlobal, DmabufState};
 use smithay::wayland::fractional_scale::FractionalScaleManagerState;
 use smithay::wayland::idle_inhibit::IdleInhibitManagerState;
@@ -63,7 +64,6 @@ use smithay::wayland::shell::wlr_layer::WlrLayerShellState;
 use smithay::wayland::shell::xdg::decoration::XdgDecorationState;
 use smithay::wayland::viewporter::ViewporterState;
 use smithay::wayland::virtual_keyboard::VirtualKeyboardManagerState;
-use smithay::wayland::background_effect::BackgroundEffectState;
 use smithay::wayland::xdg_activation::XdgActivationState;
 use smithay::wayland::xdg_foreign::XdgForeignState;
 
@@ -344,8 +344,7 @@ pub struct DriftWm {
     /// DRM render-node `dev_t` and DMA-BUF formats. `None` on winit (nested
     /// compositor has no direct DRM device). Used by ext-image-copy-capture.
     pub render_device: Option<u64>,
-    pub render_dmabuf_formats:
-        Option<smithay::backend::allocator::format::FormatSet>,
+    pub render_dmabuf_formats: Option<smithay::backend::allocator::format::FormatSet>,
     #[allow(dead_code)]
     pub cursor_shape_state: CursorShapeManagerState,
     #[allow(dead_code)]
@@ -528,9 +527,7 @@ impl ClientData for ClientState {
     fn disconnected(&self, _client_id: ClientId, _reason: DisconnectReason) {}
 }
 
-pub(crate) fn client_is_unrestricted(
-    client: &smithay::reexports::wayland_server::Client,
-) -> bool {
+pub(crate) fn client_is_unrestricted(client: &smithay::reexports::wayland_server::Client) -> bool {
     client
         .get_data::<ClientState>()
         .is_none_or(|d| !d.is_restricted)
@@ -912,10 +909,7 @@ impl DriftWm {
     /// `None` (skipping `f`) when there's no active output — per-output state
     /// has no meaning then. Value-returning callers should provide a fallback
     /// (e.g. `unwrap_or(1.0)` for zoom).
-    pub fn with_output_state<R>(
-        &mut self,
-        f: impl FnOnce(&mut OutputState) -> R,
-    ) -> Option<R> {
+    pub fn with_output_state<R>(&mut self, f: impl FnOnce(&mut OutputState) -> R) -> Option<R> {
         let output = self.active_output()?;
         let mut guard = output_state(&output);
         Some(f(&mut guard))
@@ -946,7 +940,8 @@ impl DriftWm {
         }
     }
     pub fn zoom_target(&self) -> Option<f64> {
-        self.active_output().and_then(|o| output_state(&o).zoom_target)
+        self.active_output()
+            .and_then(|o| output_state(&o).zoom_target)
     }
     pub fn set_zoom_target(&mut self, val: Option<f64>) {
         if let Some(o) = self.active_output() {
@@ -1099,11 +1094,7 @@ impl DriftWm {
             applied.as_ref().and_then(|r| r.decoration.as_ref()),
             &self.config.decorations.default_mode,
         );
-        driftwm::config::effective_border_width(
-            applied.as_ref(),
-            mode,
-            &self.config.decorations,
-        )
+        driftwm::config::effective_border_width(applied.as_ref(), mode, &self.config.decorations)
     }
 
     /// Visual center accounting for SSD title bar above content.
@@ -1228,9 +1219,7 @@ impl DriftWm {
             };
             let size = w.geometry().size;
             let b = self.window_ssd_bar(w);
-            let bw = w
-                .wl_surface()
-                .map_or(0, |s| self.window_border_width(&s)) as f64;
+            let bw = w.wl_surface().map_or(0, |s| self.window_border_width(&s)) as f64;
             let idx = rects.len();
             rects.push(driftwm::layout::auto_placement::Rect {
                 x: loc.x as f64 - bw,

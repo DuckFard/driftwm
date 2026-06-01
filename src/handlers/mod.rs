@@ -270,7 +270,8 @@ impl XdgActivationHandler for DriftWm {
             if window.geometry().size.w == 0 || window.geometry().size.h == 0 {
                 return;
             }
-            let mostly_visible = self.window_visible_at_least(&window, ACTIVATION_VISIBLE_THRESHOLD);
+            let mostly_visible =
+                self.window_visible_at_least(&window, ACTIVATION_VISIBLE_THRESHOLD);
             if mostly_visible {
                 let serial = smithay::utils::SERIAL_COUNTER.next_serial();
                 self.raise_and_focus(&window, serial);
@@ -747,11 +748,9 @@ impl OutputCaptureSourceHandler for DriftWm {
         source: ImageCaptureSource,
         output: &smithay::output::Output,
     ) {
-        source
-            .user_data()
-            .insert_if_missing(|| driftwm::protocols::image_capture_source::SourceKind::Output(
-                output.clone(),
-            ));
+        source.user_data().insert_if_missing(|| {
+            driftwm::protocols::image_capture_source::SourceKind::Output(output.clone())
+        });
     }
 }
 
@@ -804,9 +803,7 @@ impl ImageCopyCaptureHandler for DriftWm {
         self.pending_captures.push(capture);
     }
 
-    fn dmabuf_constraints(
-        &self,
-    ) -> Option<(u64, smithay::backend::allocator::format::FormatSet)> {
+    fn dmabuf_constraints(&self) -> Option<(u64, smithay::backend::allocator::format::FormatSet)> {
         Some((self.render_device?, self.render_dmabuf_formats.clone()?))
     }
 }
@@ -917,9 +914,15 @@ impl OutputManagementHandler for DriftWm {
                 os.layout_position = pos;
             }
 
-            let new_transform = s.new_transform.or_else(|| Some(s.output.current_transform()));
-            s.output
-                .change_current_state(s.output.current_mode(), new_transform, s.new_scale, s.new_position);
+            let new_transform = s
+                .new_transform
+                .or_else(|| Some(s.output.current_transform()));
+            s.output.change_current_state(
+                s.output.current_mode(),
+                new_transform,
+                s.new_scale,
+                s.new_position,
+            );
 
             {
                 let mut map = smithay::desktop::layer_map_for_output(&s.output);

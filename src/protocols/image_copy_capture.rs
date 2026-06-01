@@ -204,9 +204,7 @@ pub trait ImageCopyCaptureHandler {
     /// DRM render-node `dev_t` and supported DMA-BUF formats. Returning `None`
     /// leaves SHM as the only buffer path — modern clients (xdph-cosmic) skip
     /// SHM entirely and will fail unless DMA-BUF is advertised.
-    fn dmabuf_constraints(
-        &self,
-    ) -> Option<(u64, smithay::backend::allocator::format::FormatSet)> {
+    fn dmabuf_constraints(&self) -> Option<(u64, smithay::backend::allocator::format::FormatSet)> {
         None
     }
 }
@@ -269,9 +267,9 @@ where
                 let kind = ImageCaptureSource::from_resource(&source)
                     .and_then(|s| s.user_data().get::<SourceKind>().cloned())
                     .unwrap_or(SourceKind::Destroyed);
-                let paint_cursors = options
-                    .into_result()
-                    .is_ok_and(|o| o.contains(ext_image_copy_capture_manager_v1::Options::PaintCursors));
+                let paint_cursors = options.into_result().is_ok_and(|o| {
+                    o.contains(ext_image_copy_capture_manager_v1::Options::PaintCursors)
+                });
 
                 let buffer_size = match &kind {
                     SourceKind::Output(output) => output
@@ -371,10 +369,7 @@ where
         match request {
             ext_image_copy_capture_session_v1::Request::CreateFrame { frame } => {
                 let cap_state = state.image_copy_capture_state();
-                let session_entry = cap_state
-                    .sessions
-                    .iter_mut()
-                    .find(|(s, _)| s == session);
+                let session_entry = cap_state.sessions.iter_mut().find(|(s, _)| s == session);
 
                 if let Some((_, session_data)) = session_entry {
                     if session_data.has_active_frame {
@@ -398,10 +393,8 @@ where
             }
             ext_image_copy_capture_session_v1::Request::Destroy => {
                 let cap_state = state.image_copy_capture_state();
-                if let Some((_, session_data)) = cap_state
-                    .sessions
-                    .iter_mut()
-                    .find(|(s, _)| s == session)
+                if let Some((_, session_data)) =
+                    cap_state.sessions.iter_mut().find(|(s, _)| s == session)
                 {
                     session_data.stopped = true;
                     session_data.waiting_frame = None;
@@ -440,7 +433,7 @@ where
         _data_init: &mut DataInit<'_, D>,
     ) {
         match request {
-            ext_image_copy_capture_frame_v1::Request::Destroy => {},
+            ext_image_copy_capture_frame_v1::Request::Destroy => {}
             ext_image_copy_capture_frame_v1::Request::AttachBuffer { buffer } => {
                 let mut fd = data.lock().unwrap();
                 if fd.captured {

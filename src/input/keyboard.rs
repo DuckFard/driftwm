@@ -26,7 +26,11 @@ impl DriftWm {
         if !matches!(self.session_lock, crate::state::SessionLock::Unlocked) {
             let keyboard = self.seat.get_keyboard().unwrap();
             keyboard.input::<(), _>(
-                self, keycode, key_state, serial, time,
+                self,
+                keycode,
+                key_state,
+                serial,
+                time,
                 |state, _modifiers, handle| {
                     if key_state == KeyState::Pressed {
                         let raw = handle.modified_sym().raw();
@@ -66,8 +70,7 @@ impl DriftWm {
             time,
             |state, modifiers, handle| {
                 // If cycling is active and the cycle modifier was released, end cycle
-                if state.cycle_state.is_some()
-                    && !state.config.cycle_modifier.is_pressed(modifiers)
+                if state.cycle_state.is_some() && !state.config.cycle_modifier.is_pressed(modifiers)
                 {
                     state.end_cycle();
                     return FilterResult::Forward;
@@ -151,7 +154,11 @@ impl DriftWm {
             // Set up key repeat for repeatable actions
             if action.is_repeatable() {
                 let delay = std::time::Duration::from_millis(self.config.repeat_delay as u64);
-                self.held_action = Some((keycode_u32, action.clone(), std::time::Instant::now() + delay));
+                self.held_action = Some((
+                    keycode_u32,
+                    action.clone(),
+                    std::time::Instant::now() + delay,
+                ));
             } else {
                 // Non-repeatable action pressed — cancel any active repeat
                 self.held_action = None;

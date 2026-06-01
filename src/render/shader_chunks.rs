@@ -107,14 +107,7 @@ impl ShaderChunkCache {
     /// `PixelShaderElement` draw path as the live shader, so baked pixels match
     /// live output exactly. On GPU failure the chunk is left uncached, so the
     /// coarse-to-fine resolve falls back to a coarser LOD.
-    fn bake_chunk(
-        &mut self,
-        renderer: &mut GlesRenderer,
-        lod: u32,
-        cx: i32,
-        cy: i32,
-        frame: u64,
-    ) {
+    fn bake_chunk(&mut self, renderer: &mut GlesRenderer, lod: u32, cx: i32, cy: i32, frame: u64) {
         let chunk_size = self.chunk_canvas_size_at(lod);
         let origin = chunk_origin(cx, cy, chunk_size);
         let bake_px = self.bake_px;

@@ -104,7 +104,11 @@ mod tests {
     fn cvt_1152x864_100_crt_scenario() {
         // Reporter's exact bug case.
         let m = synth_cvt(1152, 864, 100).unwrap();
-        assert!(m.clock > 130_000 && m.clock < 160_000, "clock = {}", m.clock);
+        assert!(
+            m.clock > 130_000 && m.clock < 160_000,
+            "clock = {}",
+            m.clock
+        );
         assert_eq!(m.hdisplay, 1152);
         assert_eq!(m.vdisplay, 864);
     }

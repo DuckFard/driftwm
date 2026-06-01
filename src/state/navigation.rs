@@ -1,3 +1,6 @@
+use crate::surface_tree::focus_belongs_to_window;
+use driftwm::layout::snap::SnapRect;
+use driftwm::window_ext::WindowExt;
 use smithay::{
     desktop::Window,
     output::Output,
@@ -5,9 +8,6 @@ use smithay::{
     utils::{Logical, Point},
     wayland::seat::WaylandFocus,
 };
-use crate::surface_tree::focus_belongs_to_window;
-use driftwm::layout::snap::SnapRect;
-use driftwm::window_ext::WindowExt;
 
 use super::{DriftWm, output_state};
 
@@ -40,9 +40,8 @@ impl DriftWm {
         let window_size = window.geometry().size;
         let bar = self.window_ssd_bar(window);
         let vc = self.usable_center_screen();
-        let target = driftwm::canvas::camera_to_center_window(
-            window_loc, window_size, vc, target_zoom, bar,
-        );
+        let target =
+            driftwm::canvas::camera_to_center_window(window_loc, window_size, vc, target_zoom, bar);
 
         let window_center = self.window_visual_center(window).unwrap_or_else(|| {
             Point::from((
@@ -63,14 +62,18 @@ impl DriftWm {
     pub fn min_zoom(&self) -> f64 {
         let viewport = self.get_usable_area().size;
         driftwm::canvas::dynamic_min_zoom(
-            self.space.elements().filter(|w| {
-                !w.wl_surface().and_then(|s| driftwm::config::applied_rule(&s))
-                    .is_some_and(|r| r.widget)
-            }).map(|w| {
-                let loc = self.space.element_location(w).unwrap_or_default();
-                let size = w.geometry().size;
-                (loc, size)
-            }),
+            self.space
+                .elements()
+                .filter(|w| {
+                    !w.wl_surface()
+                        .and_then(|s| driftwm::config::applied_rule(&s))
+                        .is_some_and(|r| r.widget)
+                })
+                .map(|w| {
+                    let loc = self.space.element_location(w).unwrap_or_default();
+                    let size = w.geometry().size;
+                    (loc, size)
+                }),
             viewport,
             self.config.zoom_fit_padding,
         )
@@ -219,11 +222,7 @@ impl DriftWm {
                 }
             }
         }
-        let cluster = driftwm::layout::cluster::cluster_of(
-            destroyed,
-            &rects,
-            self.config.snap_gap,
-        );
+        let cluster = driftwm::layout::cluster::cluster_of(destroyed, &rects, self.config.snap_gap);
 
         self.focus_history
             .iter()
