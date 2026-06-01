@@ -110,6 +110,65 @@ void main() {
 - **Shipped examples**: See `extras/wallpapers/` for dot grid, compass grid,
   noise clouds, dark sea, blue drift, and animated squares.
 
+## Sampling an image (textured shaders)
+
+A `type = "shader"` background can sample a single image by adding a `texture`
+path. driftwm loads the image and binds it to the shader's `tex` sampler:
+
+```toml
+[background]
+type = "shader"
+path = "~/shaders/scroll_image.glsl"
+texture = "~/Pictures/tile.png"
+```
+
+Textured shaders are a slightly different contract from the procedural shaders
+above — they're compiled as *texture* shaders, so the input set differs:
+
+| Name             | Type        | Provided by | Description                                   |
+| ---------------- | ----------- | ----------- | --------------------------------------------- |
+| `tex`            | `sampler2D` | smithay     | The configured image. Sample with `texture2D` |
+| `v_coords`       | `vec2`      | smithay     | Normalized position within the output, 0.0–1.0 |
+| `u_texture_size` | `vec2`      | driftwm     | Image dimensions in pixels                    |
+| `u_output_size`  | `vec2`      | driftwm     | Viewport dimensions in pixels (= output / zoom) |
+| `u_camera`       | `vec2`      | driftwm     | Canvas→screen offset in canvas pixels         |
+| `u_zoom`         | `float`     | driftwm     | Canvas→screen scale                           |
+| `u_time`         | `float`     | driftwm     | Seconds since compositor start                |
+
+Notes that differ from procedural shaders:
+
+- **No built-in `size`** — texture shaders don't get smithay's `size`. Use
+  `u_output_size` instead (same value: viewport pixels).
+- **No `textureSize()`** — GLSL ES 1.0 lacks it, so the image's resolution
+  arrives as `u_texture_size`. You need it to turn canvas pixels into texel UVs.
+- **`alpha` is optional** — backgrounds are always opaque, so you don't need to
+  declare or multiply by an `alpha` uniform.
+- **`cache_shader` is ignored** — the shader-bake cache can't sample a runtime
+  texture, so textured shaders always render live.
+
+The headline pattern — sample the image at the canvas position so it scrolls
+with the viewport:
+
+```glsl
+precision highp float;
+varying vec2 v_coords;
+uniform sampler2D tex;
+uniform vec2 u_camera;
+uniform vec2 u_output_size;
+uniform vec2 u_texture_size;
+
+void main() {
+    vec2 canvas = v_coords * u_output_size + mod(u_camera, u_texture_size);
+    vec2 uv = fract(canvas / u_texture_size);  // fract() tiles it infinitely
+    gl_FragColor = texture2D(tex, uv);
+}
+```
+
+For a showcase of what textured mode uniquely enables — a procedural effect
+*on* your image, not just sampling it — see
+`extras/wallpapers/textured/ripple.glsl`, which animates a watery distortion
+over the tiled image.
+
 ## Configuring the background
 
 `[background]` accepts a `type` and a `path`. Three types are supported:
@@ -119,6 +178,9 @@ void main() {
 [background]
 type = "shader"
 path = "~/shaders/my_bg.glsl"
+# Optional: bind an image the shader can sample via `tex`
+# (see "Sampling an image" above)
+# texture = "~/Pictures/tile.png"
 
 # Image tiled across the canvas (scrolls with the camera)
 [background]

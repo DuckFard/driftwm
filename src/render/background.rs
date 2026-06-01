@@ -9,7 +9,9 @@ use smithay::utils::{Logical, Point, Rectangle, Size};
 use driftwm::config::BackgroundKind;
 
 use super::elements::TileShaderElement;
-use super::shaders::{BG_UNIFORMS, compile_tile_bg_shader, compile_wallpaper_bg_shader};
+use super::shaders::{
+    BG_UNIFORMS, compile_textured_bg_shader, compile_tile_bg_shader, compile_wallpaper_bg_shader,
+};
 
 /// Update the cached background shader element for the current camera/zoom.
 /// Returns (camera_moved, zoom_changed) for the caller's damage logic.
@@ -62,6 +64,21 @@ pub fn update_background_element(
         // blur and elements above don't get damaged for background reasons.
         let output_area = Rectangle::from_size(output_size);
         elem.resize(output_area, Some(vec![output_area]));
+    } else if let Some(elem) = state.render.cached_textured_shader_bg.get_mut(&output_name) {
+        // Scrolls/zooms like the plain shader bg. `u_output_size` co-varies with
+        // zoom (= output / zoom), so also refresh on zoom_changed even when the
+        // shader reads no camera/zoom/time uniform.
+        elem.resize(canvas_area, Some(vec![canvas_area]));
+        if uniforms_stale || zoom_changed {
+            let time_secs = state.start_time.elapsed().as_secs_f32();
+            elem.update_uniforms(vec![
+                Uniform::new("u_camera", (cur_camera.x as f32, cur_camera.y as f32)),
+                Uniform::new("u_time", time_secs),
+                Uniform::new("u_zoom", cur_zoom as f32),
+                Uniform::new("u_output_size", (canvas_w as f32, canvas_h as f32)),
+                Uniform::new("u_texture_size", (elem.tex_w as f32, elem.tex_h as f32)),
+            ]);
+        }
     }
     (camera_moved, zoom_changed)
 }
@@ -104,12 +121,24 @@ pub fn init_background(
                 &path,
                 TextureBgMode::Wallpaper,
             ),
-            BackgroundKind::Shader(path) if state.config.background.cache_shader => {
-                shader_chunks_or_live(state, renderer, initial_size, output_name, &path)
-            }
-            BackgroundKind::Shader(_) | BackgroundKind::Default => {
-                init_shader_bg(state, renderer, initial_size, output_name)
-            }
+            // Textured shaders render live — the chunk-bake path can't sample a
+            // runtime texture.
+            BackgroundKind::Shader {
+                path,
+                texture: Some(texture),
+            } => Some(textured_shader_or_fallback(
+                state,
+                renderer,
+                initial_size,
+                output_name,
+                &path,
+                &texture,
+            )),
+            BackgroundKind::Shader {
+                path,
+                texture: None,
+            } => shader_no_texture_dispatch(state, renderer, initial_size, output_name, &path),
+            BackgroundKind::Default => init_shader_bg(state, renderer, initial_size, output_name),
         };
 
     match outcome {
@@ -392,6 +421,77 @@ fn try_init_texture_bg(
     Ok(())
 }
 
+/// Compile a user shader as a texture shader and bind the configured image so
+/// it can sample `tex`. On any failure (shader read/compile or image load) fall
+/// back to the dot grid — not the user's source, which samples an unbound `tex`
+/// and would just draw black.
+fn textured_shader_or_fallback(
+    state: &mut crate::state::DriftWm,
+    renderer: &mut GlesRenderer,
+    initial_size: Size<i32, Logical>,
+    output_name: &str,
+    path: &str,
+    texture: &str,
+) -> Result<(), String> {
+    match try_init_textured_shader_bg(state, renderer, initial_size, output_name, path, texture) {
+        Ok(()) => Ok(()),
+        Err(msg) => {
+            init_default_shader_bg(state, renderer, initial_size, output_name);
+            Err(msg)
+        }
+    }
+}
+
+/// Compiled per output (no shared program slot), so it always returns a fresh
+/// verdict — never the cache-hit `None` (see the top of [`init_background`]).
+fn try_init_textured_shader_bg(
+    state: &mut crate::state::DriftWm,
+    renderer: &mut GlesRenderer,
+    initial_size: Size<i32, Logical>,
+    output_name: &str,
+    path: &str,
+    texture: &str,
+) -> Result<(), String> {
+    let src =
+        std::fs::read_to_string(path).map_err(|e| format!("background shader '{path}': {e}"))?;
+    let shader = compile_textured_bg_shader(renderer, &src)
+        .map_err(|e| format!("background shader '{path}': {e}"))?;
+    let (tex, w, h) = load_image_to_texture(renderer, texture)?;
+
+    let area = Rectangle::from_size(initial_size);
+    let time_secs = state.start_time.elapsed().as_secs_f32();
+    let uniforms = vec![
+        Uniform::new("u_camera", (0.0f32, 0.0f32)),
+        Uniform::new("u_time", time_secs),
+        Uniform::new("u_zoom", 1.0f32),
+        Uniform::new(
+            "u_output_size",
+            (initial_size.w as f32, initial_size.h as f32),
+        ),
+        Uniform::new("u_texture_size", (w as f32, h as f32)),
+    ];
+    let elem = TileShaderElement::new(
+        shader,
+        tex,
+        w,
+        h,
+        area,
+        Some(vec![area]),
+        1.0,
+        uniforms,
+        Kind::Unspecified,
+    );
+
+    state.render.background_is_animated = references_uniform(&src, "float", "u_time");
+    state.render.background_uses_camera = references_uniform(&src, "vec2", "u_camera");
+    state.render.background_uses_zoom = references_uniform(&src, "float", "u_zoom");
+    state
+        .render
+        .cached_textured_shader_bg
+        .insert(output_name.to_string(), elem);
+    Ok(())
+}
+
 fn load_image_to_texture(
     renderer: &mut GlesRenderer,
     path: &str,
@@ -442,7 +542,7 @@ fn init_shader_bg(
     } else {
         let mut err: Option<String> = None;
         let shader_source = match &state.config.background.kind {
-            BackgroundKind::Shader(path) => match std::fs::read_to_string(path) {
+            BackgroundKind::Shader { path, .. } => match std::fs::read_to_string(path) {
                 Ok(src) => src,
                 Err(e) => {
                     tracing::error!("Failed to read shader {path}: {e}, using default");
@@ -492,6 +592,76 @@ fn init_shader_bg(
     );
 
     outcome
+}
+
+/// Dispatch a `type = "shader"` background with no `texture`. If the source
+/// samples `tex`, the user meant to configure a `texture` but didn't — that
+/// would render black, so report it and fall back to the dot grid instead of
+/// silently compiling a tex-sampling shader with no texture bound. Otherwise
+/// take the normal cached/live shader path.
+fn shader_no_texture_dispatch(
+    state: &mut crate::state::DriftWm,
+    renderer: &mut GlesRenderer,
+    initial_size: Size<i32, Logical>,
+    output_name: &str,
+    path: &str,
+) -> Option<Result<(), String>> {
+    if let Ok(src) = std::fs::read_to_string(path)
+        && references_uniform(&src, "sampler2D", "tex")
+    {
+        init_default_shader_bg(state, renderer, initial_size, output_name);
+        return Some(Err(format!(
+            "background shader '{path}': samples `tex` but no `texture` is set — \
+             add a `texture` path under [background]"
+        )));
+    }
+    if state.config.background.cache_shader {
+        shader_chunks_or_live(state, renderer, initial_size, output_name, path)
+    } else {
+        init_shader_bg(state, renderer, initial_size, output_name)
+    }
+}
+
+/// Render the built-in dot grid, ignoring the configured shader source — the
+/// fallback when a `texture` shader can't be honored. Mirrors the cross-output
+/// shader caching in [`init_shader_bg`].
+fn init_default_shader_bg(
+    state: &mut crate::state::DriftWm,
+    renderer: &mut GlesRenderer,
+    initial_size: Size<i32, Logical>,
+    output_name: &str,
+) {
+    let shader = if let Some(ref cached) = state.render.background_shader {
+        cached.clone()
+    } else {
+        let src = driftwm::config::DEFAULT_SHADER;
+        let compiled = renderer
+            .compile_custom_pixel_shader(src, BG_UNIFORMS)
+            .expect("Default shader must compile");
+        state.render.background_is_animated = references_uniform(src, "float", "u_time");
+        state.render.background_uses_camera = references_uniform(src, "vec2", "u_camera");
+        state.render.background_uses_zoom = references_uniform(src, "float", "u_zoom");
+        state.render.background_shader = Some(compiled.clone());
+        compiled
+    };
+
+    let area = Rectangle::from_size(initial_size);
+    let time_secs = state.start_time.elapsed().as_secs_f32();
+    state.render.cached_bg_elements.insert(
+        output_name.to_string(),
+        PixelShaderElement::new(
+            shader,
+            area,
+            Some(vec![area]),
+            1.0,
+            vec![
+                Uniform::new("u_camera", (0.0f32, 0.0f32)),
+                Uniform::new("u_time", time_secs),
+                Uniform::new("u_zoom", 1.0f32),
+            ],
+            Kind::Unspecified,
+        ),
+    );
 }
 
 /// True if `src` declares `uniform <type> <name>` (with optional precision

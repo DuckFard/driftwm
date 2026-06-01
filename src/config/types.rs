@@ -907,8 +907,12 @@ pub const DEFAULT_SHADER: &str = include_str!("../shaders/dot_grid.glsl");
 /// source (`u_time`) or, in future, from file extensions for tile/wallpaper.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub enum BackgroundKind {
-    /// Procedural GLSL fullscreen shader.
-    Shader(String),
+    /// Procedural GLSL fullscreen shader. `texture` is an optional image the
+    /// shader samples via the built-in `tex` sampler (single-texture support).
+    Shader {
+        path: String,
+        texture: Option<String>,
+    },
     /// Texture tiled across canvas via `tile_bg.glsl` (scrolls with camera).
     Tile(String),
     /// Single image filling the viewport (fixed; does not scroll/zoom).

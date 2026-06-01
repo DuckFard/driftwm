@@ -317,8 +317,9 @@ fn toml_background_tilde_expansion() {
     "#;
     let config = Config::from_toml(toml).unwrap();
     match config.background.kind {
-        BackgroundKind::Shader(path) => {
+        BackgroundKind::Shader { path, texture } => {
             assert!(!path.starts_with("~"), "tilde should be expanded");
+            assert_eq!(texture, None);
         }
         other => panic!("expected BackgroundKind::Shader from legacy shader_path, got {other:?}"),
     }
@@ -376,9 +377,30 @@ fn toml_background_new_form_shader() {
     "#;
     let config = Config::from_toml(toml).unwrap();
     match config.background.kind {
-        BackgroundKind::Shader(path) => {
+        BackgroundKind::Shader { path, texture } => {
             assert!(!path.starts_with("~"), "tilde should be expanded");
             assert!(path.ends_with("/shaders/my.glsl"));
+            assert_eq!(texture, None);
+        }
+        other => panic!("expected BackgroundKind::Shader, got {other:?}"),
+    }
+}
+
+#[test]
+fn toml_background_shader_with_texture() {
+    let toml = r#"
+        [background]
+        type = "shader"
+        path = "~/shaders/my.glsl"
+        texture = "~/Pictures/tex.png"
+    "#;
+    let config = Config::from_toml(toml).unwrap();
+    match config.background.kind {
+        BackgroundKind::Shader { path, texture } => {
+            assert!(path.ends_with("/shaders/my.glsl"));
+            let texture = texture.expect("texture should be set");
+            assert!(!texture.starts_with("~"), "tilde should be expanded");
+            assert!(texture.ends_with("/Pictures/tex.png"));
         }
         other => panic!("expected BackgroundKind::Shader, got {other:?}"),
     }

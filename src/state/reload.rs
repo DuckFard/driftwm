@@ -88,6 +88,7 @@ impl DriftWm {
         self.render.cached_tile_bg.clear();
         self.render.wallpaper_shader = None;
         self.render.cached_wallpaper_bg.clear();
+        self.render.cached_textured_shader_bg.clear();
         self.render.chunk_bg_shader = None;
         self.render.cached_tile_chunks.clear();
         self.render.cached_shader_chunks.clear();

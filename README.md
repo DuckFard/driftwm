@@ -104,7 +104,7 @@ not stuck to the screen. This gives spatial awareness when panning.
 
 Three modes (all rendered as shaders internally):
 
-- **`shader`** — procedural GLSL, animated or static. Default is a dot grid. See [docs/shaders.md](docs/shaders.md) to write your own. Bundled shaders live in `extras/wallpapers/{static,animated}/`.
+- **`shader`** — procedural GLSL, animated or static, optionally sampling an image via `texture`. Default is a dot grid. See [docs/shaders.md](docs/shaders.md) to write your own. Bundled shaders live in `extras/wallpapers/{static,animated,textured}/`.
 - **`tile`** — PNG/JPG (single texture, tiled infinitely), or a tiled pyramidal TIFF for [gigapixel wallpapers](docs/gigapixel-wallpapers.md).
 - **`wallpaper`** — single image stretched to fill viewport (does not scroll/zoom) — a classic desktop wallpaper.
 

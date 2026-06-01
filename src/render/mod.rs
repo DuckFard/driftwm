@@ -179,6 +179,7 @@ pub fn compose_frame(
     } else if !state.render.cached_bg_elements.contains_key(&name)
         && !state.render.cached_tile_bg.contains_key(&name)
         && !state.render.cached_wallpaper_bg.contains_key(&name)
+        && !state.render.cached_textured_shader_bg.contains_key(&name)
         && !state.render.cached_tile_chunks.contains_key(&name)
         && !state.render.cached_shader_chunks.contains_key(&name)
     {
@@ -707,6 +708,16 @@ pub fn compose_frame(
     } else if let Some(elem) = state.render.cached_wallpaper_bg.get(&output.name()) {
         // Viewport-fixed: no zoom rescale, element area is already in output coords.
         vec![OutputRenderElements::WallpaperBg(elem.clone())]
+    } else if let Some(elem) = state.render.cached_textured_shader_bg.get(&output.name()) {
+        // Same canvas-sized, zoom-rescaled display as the plain shader bg; reuses
+        // the TileBg variant since the element is a TileShaderElement.
+        vec![OutputRenderElements::TileBg(
+            RescaleRenderElement::from_element(
+                elem.clone(),
+                Point::<i32, Physical>::from((0, 0)),
+                zoom,
+            ),
+        )]
     } else {
         vec![]
     };

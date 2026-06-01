@@ -512,3 +512,42 @@ pub(super) fn compile_wallpaper_bg_shader(renderer: &mut GlesRenderer) -> Option
         }
     }
 }
+
+/// Uniforms for a user `type = "shader"` background that samples a `texture`.
+/// Same camera/zoom/time set as `BG_UNIFORMS`, plus the output and image sizes:
+/// texture shaders get neither smithay's built-in `size` nor `textureSize()`
+/// (GLSL ES 1.0), so a shader needs both passed in to map `v_coords` → canvas
+/// → texel UV. `tex`/`alpha` are provided by the texture-shader path itself.
+pub(super) const BG_TEX_UNIFORMS: &[UniformName<'static>] = &[
+    UniformName {
+        name: Cow::Borrowed("u_camera"),
+        type_: UniformType::_2f,
+    },
+    UniformName {
+        name: Cow::Borrowed("u_time"),
+        type_: UniformType::_1f,
+    },
+    UniformName {
+        name: Cow::Borrowed("u_zoom"),
+        type_: UniformType::_1f,
+    },
+    UniformName {
+        name: Cow::Borrowed("u_output_size"),
+        type_: UniformType::_2f,
+    },
+    UniformName {
+        name: Cow::Borrowed("u_texture_size"),
+        type_: UniformType::_2f,
+    },
+];
+
+/// Compile a user-supplied background shader as a *texture* shader so it can
+/// sample the configured image via the built-in `tex` sampler.
+pub(super) fn compile_textured_bg_shader(
+    renderer: &mut GlesRenderer,
+    src: &str,
+) -> Result<GlesTexProgram, String> {
+    renderer
+        .compile_custom_texture_shader(src, BG_TEX_UNIFORMS)
+        .map_err(|e| format!("compile error: {e}"))
+}
