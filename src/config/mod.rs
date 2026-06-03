@@ -201,30 +201,48 @@ impl Config {
         Self::load_from(&config_path())
     }
 
+    /// Like [`Self::load`] but also returns a user-facing error on read/parse
+    /// failure, for the on-screen error bar.
+    pub fn load_reporting() -> (Self, Option<String>) {
+        Self::load_from_reporting(&config_path())
+    }
+
     /// Load config from an explicit path. Used by `--config <path>` CLI arg.
     /// Missing file → all defaults. Parse failure → error log + all defaults.
     pub fn load_from(config_path: &std::path::Path) -> Self {
-        let raw = match std::fs::read_to_string(config_path) {
+        Self::load_from_reporting(config_path).0
+    }
+
+    /// Like [`Self::load_from`] but also returns a user-facing error when the file
+    /// can't be read or parsed. Message format matches the hot-reload path.
+    pub fn load_from_reporting(config_path: &std::path::Path) -> (Self, Option<String>) {
+        let (raw, error) = match std::fs::read_to_string(config_path) {
             Ok(contents) => {
                 tracing::info!("Loaded config from {}", config_path.display());
                 match ::toml::from_str::<ConfigFile>(&contents) {
-                    Ok(cf) => cf,
+                    Ok(cf) => (cf, None),
                     Err(e) => {
                         tracing::error!("Failed to parse config: {e}");
-                        ConfigFile::default()
+                        (ConfigFile::default(), Some(format!("config error: {e}")))
                     }
                 }
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 tracing::info!("No config file found, using defaults");
-                ConfigFile::default()
+                (ConfigFile::default(), None)
             }
             Err(e) => {
                 tracing::error!("Failed to read config: {e}");
-                ConfigFile::default()
+                (
+                    ConfigFile::default(),
+                    Some(format!(
+                        "config: failed to read {}: {e}",
+                        config_path.display()
+                    )),
+                )
             }
         };
-        Self::from_raw(raw)
+        (Self::from_raw(raw), error)
     }
 
     /// Build a Config from a parsed (but unvalidated) ConfigFile.

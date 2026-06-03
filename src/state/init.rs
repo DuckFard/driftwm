@@ -50,7 +50,7 @@ use std::time::Instant;
 
 use driftwm::config::Config;
 
-use super::{CursorState, DriftWm, RenderCache, SessionLock, client_is_unrestricted};
+use super::{CursorState, DriftWm, ErrorSource, RenderCache, SessionLock, client_is_unrestricted};
 
 impl DriftWm {
     pub fn new(
@@ -175,7 +175,7 @@ impl DriftWm {
         let background_effect_state =
             smithay::wayland::background_effect::BackgroundEffectState::new::<Self>(&dh);
 
-        let config = Config::load();
+        let (config, config_error) = Config::load_reporting();
 
         let mut seat: Seat<Self> = seat_state.new_wl_seat(&dh, "seat-0");
         let kb = &config.keyboard_layout;
@@ -201,6 +201,12 @@ impl DriftWm {
         seat.add_pointer();
 
         let autostart = config.autostart.clone();
+
+        let mut errors = BTreeMap::new();
+        if let Some(msg) = config_error {
+            errors.insert(ErrorSource::Config, msg);
+        }
+
         Self {
             start_time: Instant::now(),
             display_handle: dh,
@@ -304,7 +310,7 @@ impl DriftWm {
             satellite: None,
             udev_device: None,
             last_titlebar_click: None,
-            errors: BTreeMap::new(),
+            errors,
         }
     }
 }
