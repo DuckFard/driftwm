@@ -76,8 +76,10 @@ impl XdgShellHandler for DriftWm {
         self.space.map_element(window.clone(), pos, true);
         self.space.raise_element(&window, true);
         self.enforce_below_windows();
-        let serial = smithay::utils::SERIAL_COUNTER.next_serial();
-        keyboard.set_focus(self, Some(FocusTarget(wl_surface.clone())), serial);
+        // Don't focus here: a pre-buffer wl_keyboard.enter is unusable, and
+        // set_focus is a no-op when the target is unchanged, so focusing now
+        // would trap the client unfocused (the on-commit re-focus does nothing).
+        // Focus is delivered once mapped, on first commit.
         self.pending_center.insert(wl_surface);
     }
 
