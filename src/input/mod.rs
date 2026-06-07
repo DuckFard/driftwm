@@ -666,8 +666,11 @@ impl DriftWm {
     /// disarmed, so a monitor the cursor leaves stops panning immediately
     /// instead of drifting on its own.
     pub(super) fn refresh_cursor_edge_pan(&mut self) {
+        let Some(pointer) = self.seat.get_pointer() else {
+            return;
+        };
         // During a grab (e.g. window move) the grab owns edge_pan_velocity.
-        if self.seat.get_pointer().is_some_and(|p| p.is_grabbed()) {
+        if pointer.is_grabbed() {
             return;
         }
         if !self.cursor_edge_pan {
@@ -696,7 +699,7 @@ impl DriftWm {
             let os = crate::state::output_state(&output);
             (os.camera, os.zoom)
         };
-        let canvas_pos = self.seat.get_pointer().unwrap().current_location();
+        let canvas_pos = pointer.current_location();
         let screen_pos =
             driftwm::canvas::canvas_to_screen(driftwm::canvas::CanvasPos(canvas_pos), camera, zoom)
                 .0;
