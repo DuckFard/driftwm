@@ -123,11 +123,7 @@ type = "shader"
 path = "~/.config/driftwm/bg.glsl"
 # texture = "~/Pictures/img.jpg"  # if it's a texture-based shader
 
-# Or: type = "tile",      path = "~/Pictures/ti
-
-https://github.com/user-attachments/assets/6478bf2f-3140-48a4-9c3e-26024973745e
-
-le.png"
+# Or: type = "tile",      path = "~/Pictures/tile.png"
 # Or: type = "tile",      path = "~/Pictures/world.tif"   # pyramidal TIFF
 # Or: type = "wallpaper", path = "~/Pictures/wallpaper.jpg"
 ```
