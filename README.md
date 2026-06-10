@@ -20,7 +20,7 @@ Designed with laptops in mind: navigation and window management are trackpad-fir
 Built on [smithay](https://github.com/Smithay/smithay). Inspired by [vxwm](https://codeberg.org/wh1tepearl/vxwm); borrows implementation details from [niri](https://github.com/YaLTeR/niri).
 
 > [!WARNING]
-> This is experimental software. Primarily built with AI. Use at your own risk.
+> This is experimental software, primarily built with AI.
 
 ## Features
 
