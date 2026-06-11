@@ -813,7 +813,18 @@ impl DriftWm {
             // mode-sized output geometry, which undercounts at zoom < 1.
             // bbox (not geometry) ensures popups extending past the toplevel
             // still damage the right outputs — matches smithay's refresh semantics.
-            let mut hit_any = false;
+            // Inflate by SSD chrome (shadow + title bar) so a window whose body
+            // is off-screen but whose shadow/title-bar sliver still shows marks
+            // that output. A resolved window always returns: when visible on no
+            // output it marks nothing, rather than falling through to the
+            // `mark_all_dirty` path and redrawing every output for it.
+            let margin = self.config.decorations.title_bar_height
+                + driftwm::config::DecorationConfig::SHADOW_RADIUS.ceil() as i32;
+            let mut chrome_bbox = win_bbox;
+            chrome_bbox.loc.x -= margin;
+            chrome_bbox.loc.y -= margin;
+            chrome_bbox.size.w += 2 * margin;
+            chrome_bbox.size.h += 2 * margin;
             for output in &outputs {
                 let (cam, zoom) = {
                     let os = output_state(output);
@@ -821,14 +832,11 @@ impl DriftWm {
                 };
                 let viewport = output_logical_size(output);
                 let visible = driftwm::canvas::visible_canvas_rect(cam, viewport, zoom);
-                if visible.overlaps(win_bbox) {
+                if visible.overlaps(chrome_bbox) {
                     self.redraws_needed.insert(output.clone());
-                    hit_any = true;
                 }
             }
-            if hit_any {
-                return;
-            }
+            return;
         }
 
         for output in &outputs {
