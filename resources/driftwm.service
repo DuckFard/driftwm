@@ -12,4 +12,5 @@ Before=xdg-desktop-autostart.target
 Slice=session.slice
 Type=notify
 NotifyAccess=main
-ExecStart=driftwm
+UnsetEnvironment=WAYLAND_DISPLAY DISPLAY WAYLAND_SOCKET
+ExecStart=driftwm --backend udev
