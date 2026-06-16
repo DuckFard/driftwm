@@ -104,6 +104,10 @@ pub struct CaptureOutputState {
     pub age: usize,
     /// Reset age when cursor inclusion changes between frames.
     pub last_paint_cursors: bool,
+    /// Time (since `start_time`) this state was last rendered into; idle
+    /// entries are evicted so a finished capture's texture doesn't linger
+    /// until output disconnect.
+    pub last_used: std::time::Duration,
 }
 
 /// Buffered middle-click from a 3-finger tap. Held for DOUBLE_TAP_WINDOW_MS

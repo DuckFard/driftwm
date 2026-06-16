@@ -15,8 +15,10 @@ fn get_capture_state<'a>(
     scale: Scale<f64>,
     transform: Transform,
     paint_cursors: bool,
+    now: std::time::Duration,
 ) -> &'a mut crate::state::CaptureOutputState {
-    map.entry(key.to_owned())
+    let cs = map
+        .entry(key.to_owned())
         .or_insert_with(|| crate::state::CaptureOutputState {
             damage_tracker: smithay::backend::renderer::damage::OutputDamageTracker::new(
                 size, scale, transform,
@@ -24,7 +26,10 @@ fn get_capture_state<'a>(
             offscreen_texture: None,
             age: 0,
             last_paint_cursors: paint_cursors,
-        })
+            last_used: now,
+        });
+    cs.last_used = now;
+    cs
 }
 
 /// Fulfill pending screencopy requests by rendering to offscreen textures.
@@ -101,6 +106,7 @@ pub fn render_screencopy(
                         scale,
                         transform,
                         paint_cursors,
+                        timestamp,
                     ))
                 } else {
                     None
@@ -135,6 +141,7 @@ pub fn render_screencopy(
                         scale,
                         transform,
                         paint_cursors,
+                        timestamp,
                     ))
                 } else {
                     None
@@ -422,6 +429,7 @@ pub fn render_capture_frames(
                     scale,
                     Transform::Normal,
                     paint_cursors,
+                    timestamp,
                 ))
             } else {
                 None
@@ -457,6 +465,7 @@ pub fn render_capture_frames(
                     scale,
                     Transform::Normal,
                     paint_cursors,
+                    timestamp,
                 ))
             } else {
                 None
@@ -650,6 +659,7 @@ pub fn render_toplevel_captures(state: &mut crate::state::DriftWm, renderer: &mu
             scale,
             Transform::Normal,
             capture.paint_cursors,
+            timestamp,
         ));
 
         // Try DMA-BUF first, fall back to SHM.

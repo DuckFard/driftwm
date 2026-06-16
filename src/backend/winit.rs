@@ -299,6 +299,8 @@ pub fn init_winit(
             // --- Post-render ---
             crate::render::refresh_foreign_toplevels(data);
             crate::render::post_render(data, &output);
+            data.render
+                .evict_idle_capture_state(data.start_time.elapsed());
             data.display_handle.flush_clients().ok();
 
             #[cfg(feature = "profile-with-tracy")]

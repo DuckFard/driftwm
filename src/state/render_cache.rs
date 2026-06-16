@@ -83,6 +83,15 @@ impl RenderCache {
             .retain(|k, _| !k.ends_with(&format!(":{output_name}")));
     }
 
+    /// Drop capture textures unused for the grace period. Otherwise a finished
+    /// screenshot/screencast client's offscreen texture (~33 MB at 4K) lingers
+    /// until output disconnect. The grace keeps actively-recording clients warm.
+    pub fn evict_idle_capture_state(&mut self, now: std::time::Duration) {
+        const MAX_IDLE: std::time::Duration = std::time::Duration::from_secs(5);
+        self.capture_state
+            .retain(|_, cs| now.saturating_sub(cs.last_used) <= MAX_IDLE);
+    }
+
     /// Drop the large per-output chunk caches (shader-bake + gigapixel TIFF),
     /// freeing hundreds of MB of GPU textures. Single-texture tile/wallpaper
     /// caches stay (cheap; re-decoding on exit would hitch). `compose_frame`
