@@ -1,0 +1,69 @@
+# NSO widget integration snippet for driftwm.
+#
+# Merge this into ~/.config/driftwm/config.toml or copy the relevant sections.
+# Installed package command:
+#   driftwm-nso
+#
+# Source-tree command:
+#   ~/path/to/driftwm/extras/nso/scripts/launch.sh
+
+autostart = [
+    "driftwm-nso",
+]
+
+[keybindings]
+"mod+shift+n" = "spawn driftwm-nso-widget --widget welcome"
+"mod+shift+ctrl+n" = "spawn driftwm-nso"
+
+# Shared defaults for every NSO toplevel. These are native GTK/Cairo windows,
+# not browser/web views. Regular modules stay movable on the canvas.
+[[window_rules]]
+app_id = "dev.driftwm.nso.*"
+decoration = "none"
+border_width = 0
+corner_radius = 0
+shadow = false
+
+[[window_rules]]
+app_id = "dev.driftwm.nso.welcome"
+position = [0, 0]
+
+[[window_rules]]
+app_id = "dev.driftwm.nso.task_manager"
+position = [-885, 443]
+
+[[window_rules]]
+app_id = "dev.driftwm.nso.ame"
+position = [-225, 518]
+
+[[window_rules]]
+app_id = "dev.driftwm.nso.jine"
+position = [435, 450]
+
+[[window_rules]]
+app_id = "dev.driftwm.nso.social_media"
+position = [1035, 345]
+
+[[window_rules]]
+app_id = "dev.driftwm.nso.media_player"
+position = [-885, -53]
+
+[[window_rules]]
+app_id = "dev.driftwm.nso.calendar"
+position = [-233, -53]
+
+[[window_rules]]
+app_id = "dev.driftwm.nso.desktop_icons"
+position = [435, -180]
+
+[[window_rules]]
+app_id = "dev.driftwm.nso.quick_notes"
+position = [1088, -180]
+
+[[window_rules]]
+app_id = "dev.driftwm.nso.medications"
+position = [-1080, -488]
+
+[[window_rules]]
+app_id = "dev.driftwm.nso.trash_bin"
+position = [-720, -540]

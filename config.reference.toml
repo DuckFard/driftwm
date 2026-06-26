@@ -34,6 +34,11 @@
 # Each entry is passed to sh -c, so full shell syntax works (pipes, &&, env vars).
 # autostart = []
 #
+# Example: launch the bundled Needy Streamer Overload widgets as native
+# driftwm canvas widgets. See extras/nso/config/driftwm.toml for the full
+# app_id placement rules.
+# # autostart = ["driftwm-nso"]
+#
 # Running driftwm as a systemd session (via driftwm-session / a display manager)
 # also launches XDG autostart entries (~/.config/autostart, /etc/xdg/autostart),
 # in addition to the autostart list above. To opt out:
@@ -305,6 +310,9 @@
 # # "ctrl+Print" = "spawn driftwm msg screenshot window -o - | wl-copy"
 # Example: tap binding — bare modifier chord, fires on release with no key on top
 # # "alt+shift" = "switch-layout next"
+# Example: bundled NSO widget launchers.
+# # "mod+shift+n" = "spawn driftwm-nso-widget --widget welcome"
+# # "mod+shift+ctrl+n" = "spawn driftwm-nso"
 
 # Mouse bindings: "Modifier+...+Trigger" = "action"
 # Context-aware: on-window, on-canvas, anywhere.
@@ -547,6 +555,16 @@
 # # position   = [0, 0]
 # # widget     = true
 # # decoration = "none"
+#
+# # Bundled Needy Streamer Overload widgets. The full integration snippet in
+# # extras/nso/config/driftwm.toml adds per-widget positions; regular NSO
+# # modules stay movable on the canvas.
+# # [[window_rules]]
+# # app_id        = "dev.driftwm.nso.*"
+# # decoration    = "none"
+# # border_width  = 0
+# # corner_radius = 0
+# # shadow        = false
 #
 # # Picture-in-Picture: pinned to the screen, stays put while you pan/zoom.
 # # Movable/resizable; drop `position` to center it on the active output.

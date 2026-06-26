@@ -1,0 +1,22 @@
+# Copy to ~/.config/driftwm/nso.toml for user overrides.
+
+[ui]
+# 1.5 makes every NSO window about 50% larger while preserving Rainmeter
+# logical coordinates and click regions.
+scale = 1.5
+
+[calendar]
+# Upstream-compatible 12/24 hour selector from Settings.inc.
+TimeFormat1224 = 12
+
+[calendar.weather]
+# Upstream-compatible OpenWeatherMap settings from:
+# @Resources/Settings/Calendar/Settings.inc
+# Replace both placeholder values with real OpenWeatherMap values. The widget
+# auto-enables weather once both values are present.
+enabled = false
+provider = "openweathermap"
+LocationCode = "Paste Here!"
+ApiKey = "Paste Here!"
+Units = "metric"
+refresh_minutes = 60

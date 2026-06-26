@@ -1,0 +1,138 @@
+[ui]
+scale = 1.5
+
+[task_manager]
+disk_path = "/"
+cpu_critical = 80
+memory_critical = 85
+disk_critical = 90
+
+[ame]
+debug = false
+update_ms = 250
+stream_start_hour = 22
+stream_end_hour = 5
+default_love = 20
+default_darkness = 6
+
+[jine]
+message_interval_seconds = 60
+stickers = ["ok", "omg", "sad", "idc", "sorry", "ded", "love", "this"]
+
+[social_media]
+screen_time_retweet_scale = 8
+screen_time_like_scale = 11
+
+[media_player]
+preferred_player = ""
+
+[media_player.special_title_images]
+"internet overdose" = "overdose.png"
+"internet yamero" = "yamero.png"
+"yamero" = "yamero.png"
+"it's raining after all" = "yappari.png"
+"raining after all" = "yappari.png"
+"under the summer breeze" = "breeze.png"
+"my time" = "close.png"
+"cubism" = "picasso.png"
+"cubibibibibism" = "picacacacacasso.png"
+"i am a fake picasso" = "picasso.png"
+"picasso" = "picasso.png"
+"breeze" = "breeze.png"
+"yappari" = "yappari.png"
+
+[calendar]
+hour24 = false
+
+[calendar.weather]
+# Weather remains idle until OpenWeatherMap credentials are supplied. The
+# upstream-compatible user-facing keys are `ApiKey` and `LocationCode`; these
+# snake_case defaults keep the same model for Nix-friendly config.
+enabled = false
+provider = "openweathermap"
+api_key = ""
+# Matches the upstream Rainmeter `LocationCode` setting. OpenWeatherMap city
+# IDs are visible in URLs such as https://openweathermap.org/city/2643743.
+location_code = ""
+units = "metric"
+refresh_minutes = 60
+
+[[desktop_icons]]
+id = "internet"
+label = "Internet"
+icon = "internet.png"
+url = "https://www.google.com"
+
+[[desktop_icons]]
+id = "youtube"
+label = "YouTube"
+icon = "youtube.png"
+url = "https://www.youtube.com"
+
+[[desktop_icons]]
+id = "search"
+label = "Search"
+icon = "search.png"
+url = "https://www.google.com"
+
+[[desktop_icons]]
+id = "games"
+label = "Games"
+icon = "game.png"
+path = "$HOME/Games"
+
+[[desktop_icons]]
+id = "discord"
+label = "Discord"
+icon = "discord.png"
+command = "vesktop"
+
+[[desktop_icons]]
+id = "twitter"
+label = "Twitter"
+icon = "twitter.png"
+url = "https://twitter.com"
+
+[[desktop_icons]]
+id = "files"
+label = "Files"
+icon = "folder_open.png"
+path = "$HOME"
+
+[[desktop_icons]]
+id = "notes"
+label = "Notes"
+icon = "text.png"
+widget = "quick-notes"
+
+[[desktop_icons]]
+id = "jine"
+label = "JINE"
+icon = "jine.png"
+widget = "jine"
+
+[[desktop_icons]]
+id = "meds"
+label = "Meds"
+icon = "medications.png"
+widget = "medications"
+
+[[desktop_icons]]
+id = "photos"
+label = "Photos"
+icon = "folder_photos.png"
+path = "$HOME/Pictures"
+
+[[desktop_icons]]
+id = "config"
+label = "Config"
+icon = "icon_gear.png"
+path = "$CONFIG_FILE"
+
+[quick_notes]
+default_title = "Quick Notes"
+variant = "large"
+
+[trash_bin]
+empty_with_click = true
+open_with_right_click = true

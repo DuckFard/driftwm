@@ -205,6 +205,15 @@ window-search script that lets you search and jump to any open window.
 - 40+ Wayland protocols
 - [IPC control](docs/ipc.md): script the compositor over a Unix socket with `driftwm msg`
 
+### Bundled NSO widgets
+
+`extras/nso/` contains a faithful native driftwm widget port of the
+`lezzthanthree/Needy-Streamer-Overload` Rainmeter skin suite. It uses GTK/Cairo
+toplevels, native driftwm window rules, and Nix-wrapped launchers instead of a
+browser or localhost app. Regular NSO modules are movable canvas windows; the
+decorative sidebar background windows are not launched by default. See
+[extras/nso/README.md](extras/nso/README.md).
+
 ## Install
 
 ### Arch Linux (AUR)
@@ -376,8 +385,9 @@ Compositor-agnostic full Wayland shells like **noctalia**, **wayle**, and **dank
 
 The [`extras/`](extras/) directory contains a complete setup — driftwm config,
 GLSL shader wallpapers, Python widgets (clock, calendar, system stats, power
-menu), waybar with taskbar/tray, fuzzel window-search script, and window rules
-tying it all together. Use it as a starting point or steal pieces.
+menu), the native NSO widget suite, waybar with taskbar/tray, fuzzel
+window-search script, and window rules tying it all together. Use it as a
+starting point or steal pieces.
 
 ## Community
 
