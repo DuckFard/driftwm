@@ -186,6 +186,25 @@ def run_command(args: list[str], timeout: float = 0.8) -> str:
     return completed.stdout.strip() if completed.returncode == 0 else ""
 
 
+def parse_media_seconds(value: str, *, microseconds: bool = False) -> int:
+    text = value.strip()
+    if not text:
+        return 0
+    if re.fullmatch(r"\d+(?::\d{1,2}){1,2}(?:\.\d+)?", text):
+        parts = text.split(":")
+        seconds = float(parts[-1])
+        minutes = int(parts[-2])
+        hours = int(parts[-3]) if len(parts) == 3 else 0
+        return max(0, int(hours * 3600 + minutes * 60 + seconds))
+    try:
+        number = float(text)
+    except ValueError:
+        return 0
+    if microseconds and number > 10_000:
+        number /= 1_000_000
+    return max(0, int(number))
+
+
 def human_bytes(size: int) -> str:
     value = float(size)
     for unit in ["B", "KiB", "MiB", "GiB", "TiB"]:
@@ -482,16 +501,16 @@ class NsoState:
         title = run_command(base + ["metadata", "title"]) or "Unknown title"
         artist = run_command(base + ["metadata", "artist"]) or "Unknown artist"
         duration_raw = run_command(base + ["metadata", "mpris:length"])
+        duration_label_raw = run_command(base + ["metadata", "--format", "{{duration(mpris:length)}}"])
         position_raw = run_command(base + ["position"])
         art = run_command(base + ["metadata", "mpris:artUrl"])
         source = run_command(base + ["metadata", "xesam:url"])
         if not art:
             art = self.derived_art_url(source)
-        duration = int(int(duration_raw or 0) / 1_000_000) if duration_raw.isdigit() else 0
-        try:
-            position = int(float(position_raw or 0))
-        except ValueError:
-            position = 0
+        duration = parse_media_seconds(duration_raw, microseconds=True) or parse_media_seconds(duration_label_raw)
+        position = parse_media_seconds(position_raw)
+        if duration and position > duration:
+            position = duration
         special = ""
         lower = f"{title} {artist}".lower()
         for needle, image in self.config.get("media_player", {}).get("special_title_images", {}).items():
@@ -1133,7 +1152,11 @@ class NsoWindow(Gtk.ApplicationWindow):
 
     def fmt_time(self, seconds: int) -> str:
         seconds = max(0, seconds)
-        return f"{seconds // 60}:{seconds % 60:02d}"
+        hours = seconds // 3600
+        minutes = (seconds % 3600) // 60
+        if hours:
+            return f"{hours}:{minutes:02d}:{seconds % 60:02d}"
+        return f"{minutes}:{seconds % 60:02d}"
 
     def draw_task_manager(self, cr: Any) -> None:
         self.draw_frame(cr, "Task Manager/window.png", "Task Manager")
@@ -1319,8 +1342,10 @@ class NsoWindow(Gtk.ApplicationWindow):
         duration = int(media.get("duration", 0))
         position = int(media.get("position", 0))
         pct = int(position / duration * 100) if duration else 0
+        pct = max(0, min(100, pct))
         self.draw_bar(cr, 110, 104, 270, 2, pct, PURPLE)
-        self.draw_text(cr, f"{self.fmt_time(position)}/{self.fmt_time(duration)}", 380, 115, 12, PURPLE, None, "Dinkie Bitmap 7px", align="right")
+        duration_label = self.fmt_time(duration) if duration else "--:--"
+        self.draw_text(cr, f"{self.fmt_time(position)}/{duration_label}", 380, 115, 12, PURPLE, None, "Dinkie Bitmap 7px", align="right")
         play_image = "Pause.png" if media.get("status") == "Playing" else "Play.png"
         controls = [("previous", "Previous.png", 112), ("play-pause", play_image, 147), ("next", "Next.png", 180)]
         for action, image, x in controls:
