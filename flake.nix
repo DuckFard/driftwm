@@ -105,8 +105,10 @@
           install -Dm644 config.reference.toml $out/etc/driftwm/config.reference.toml
           mkdir -p $out/share/driftwm/nso
           cp -R extras/nso/assets extras/nso/config extras/nso/scripts extras/nso/widgets $out/share/driftwm/nso/
-          for f in extras/wallpapers/*.glsl; do
-            install -Dm644 "$f" "$out/share/driftwm/wallpapers/$(basename "$f")"
+          for f in extras/wallpapers/*.glsl extras/wallpapers/*/*.glsl; do
+            [ -e "$f" ] || continue
+            rel="''${f#extras/wallpapers/}"
+            install -Dm644 "$f" "$out/share/driftwm/wallpapers/$rel"
           done
 
         substituteInPlace $out/share/wayland-sessions/driftwm.desktop --replace-fail "Exec=driftwm-session" "Exec=$out/bin/driftwm-session"

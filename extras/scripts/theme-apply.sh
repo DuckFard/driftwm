@@ -15,7 +15,10 @@ case "$mode" in
     *) echo "usage: $0 light|dark [--no-restart]" >&2; exit 2 ;;
 esac
 
-EXTRAS="$HOME/Documents/work/scripts/driftwm/extras"
+SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
+EXTRAS="${DRIFTWM_EXTRAS:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+CONFIG="${DRIFTWM_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/driftwm/config.toml}"
+WALLPAPERS="${DRIFTWM_WALLPAPERS:-~/.config/driftwm/extras/wallpapers}"
 
 if [ "$mode" = "light" ]; then
     BG="#FDF6E3"
@@ -38,8 +41,8 @@ fi
 sed -i \
     -e "s|^bg_color = \".*\"|bg_color = \"$BG\"|" \
     -e "s|^fg_color = \".*\"|fg_color = \"$FG\"|" \
-    -e "s|^path = \".*static/[^\"]*\\.glsl\"|path = \"/usr/local/share/driftwm/wallpapers/static/$SHADER\"|" \
-    "$EXTRAS/config.toml"
+    -e "s|^path = \".*static/[^\"]*\\.glsl\"|path = \"$WALLPAPERS/static/$SHADER\"|" \
+    "$CONFIG"
 
 # alacritty: swap import to colors-{light,dark}.toml. Live-reload picks it up.
 sed -i "s|colors-[a-z]*\\.toml|colors-${mode}.toml|" "$EXTRAS/alacritty/alacritty.toml"

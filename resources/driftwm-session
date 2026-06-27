@@ -6,7 +6,7 @@
 
 if [ -z "$_DRIFTWM_WRAPPER" ]; then
     export _DRIFTWM_WRAPPER=1
-    exec "$SHELL" -l -c "$0 $@"
+    exec "$SHELL" -l -c 'exec "$@"' driftwm-login-shell "$0" "$@"
 fi
 
 if ! hash systemctl >/dev/null 2>&1; then

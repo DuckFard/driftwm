@@ -42,9 +42,9 @@ Use podman to test builds on other distros (Docker Desktop is flaky on Fedora):
 
 ```bash
 # Arch Linux
-podman run --rm -it --security-opt label=disable -v ~/Documents/work/scripts/driftwm:/src archlinux:latest bash
+podman run --rm -it --security-opt label=disable -v "$PWD:/src" -w /src archlinux:latest bash
 pacman -Syu --noconfirm rust cargo pkg-config libdisplay-info libinput seatd mesa libxkbcommon
-cd /src && cargo build
+cargo build
 ```
 
 Notes:

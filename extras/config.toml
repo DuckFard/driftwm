@@ -1,4 +1,10 @@
-# driftwm — personal config (symlink to ~/.config/driftwm/config.toml)
+# driftwm — personal config template.
+#
+# Expected layout:
+#   ~/.config/driftwm/config.toml -> this file, or a copy of it
+#   ~/.config/driftwm/extras      -> this extras directory, or a copy of it
+#
+# Set DRIFTWM_EXTRAS before launching driftwm to override that default path.
 
 autostart = [
     # gnome-keyring is started+unlocked by PAM (pam_gnome_keyring auto_start in
@@ -10,14 +16,14 @@ autostart = [
     "/usr/libexec/polkit-gnome-authentication-agent-1",
     "swayosd-server --top-margin 0.95",
     "swaync",
-     "waybar -c ~/.config/waybar/taskbar.jsonc -s ~/.config/waybar/taskbar.css",
-     "sleep 1 && waybar -c ~/.config/waybar/tray.jsonc -s ~/.config/waybar/tray.css",
-     "vorta -d",
-     "~/Documents/work/scripts/driftwm/extras/widgets/launch.sh",
-     "~/Documents/work/scripts/driftwm/extras/scripts/battery_notify.sh",
-     "~/Documents/work/scripts/driftwm/extras/scripts/theme-watch.sh",
-     "swayidle -w timeout 300 'brightnessctl -s set 10%' resume 'brightnessctl -r' timeout 330 '~/Documents/work/scripts/driftwm/extras/scripts/lock.sh' timeout 600 'systemctl suspend' before-sleep '~/Documents/work/scripts/driftwm/extras/scripts/lock.sh'",
-     "sway-audio-idle-inhibit",
+    "waybar -c ~/.config/waybar/taskbar.jsonc -s ~/.config/waybar/taskbar.css",
+    "sleep 1 && waybar -c ~/.config/waybar/tray.jsonc -s ~/.config/waybar/tray.css",
+    "vorta -d",
+    "sh -lc 'extras=${DRIFTWM_EXTRAS:-$HOME/.config/driftwm/extras}; \"$extras/widgets/launch.sh\"'",
+    "sh -lc 'extras=${DRIFTWM_EXTRAS:-$HOME/.config/driftwm/extras}; \"$extras/scripts/battery_notify.sh\"'",
+    "sh -lc 'extras=${DRIFTWM_EXTRAS:-$HOME/.config/driftwm/extras}; \"$extras/scripts/theme-watch.sh\"'",
+    "sh -lc 'extras=${DRIFTWM_EXTRAS:-$HOME/.config/driftwm/extras}; exec swayidle -w timeout 300 \"brightnessctl -s set 10%\" resume \"brightnessctl -r\" timeout 330 \"$extras/scripts/lock.sh\" timeout 600 \"systemctl suspend\" before-sleep \"$extras/scripts/lock.sh\"'",
+    "sway-audio-idle-inhibit",
 ]
 
 focus_follows_mouse = true
@@ -46,7 +52,7 @@ fg_color = "#5C6A72"
 
 [background]
 type = "shader"
-path = "/usr/local/share/driftwm/wallpapers/static/pink_cloud.glsl"
+path = "~/.config/driftwm/extras/wallpapers/static/pink_cloud.glsl"
 
 [output.outline]
 color="#FDF6E3"
@@ -58,8 +64,8 @@ decoration_fit_snapped = true
 [keybindings]
 "mod+return" = "exec ptyxis -s"
 "mod+d" = "exec fuzzel"
-"mod+shift+d" = "spawn ~/Documents/work/scripts/driftwm/extras/scripts/theme-toggle.sh"
-"mod+l" = "spawn ~/Documents/work/scripts/driftwm/extras/scripts/lock.sh"
+"mod+shift+d" = "spawn sh -lc 'extras=${DRIFTWM_EXTRAS:-$HOME/.config/driftwm/extras}; \"$extras/scripts/theme-toggle.sh\"'"
+"mod+l" = "spawn sh -lc 'extras=${DRIFTWM_EXTRAS:-$HOME/.config/driftwm/extras}; \"$extras/scripts/lock.sh\"'"
 "mod+n" = "spawn swaync-client -t"
 # swayosd instead of default wpctl/brightnessctl
 "XF86AudioRaiseVolume" = "spawn swayosd-client --output-volume raise"
@@ -67,7 +73,7 @@ decoration_fit_snapped = true
 "XF86AudioMute" = "spawn swayosd-client --output-volume mute-toggle"
 "XF86MonBrightnessUp" = "spawn swayosd-client --brightness raise"
 "XF86MonBrightnessDown" = "spawn swayosd-client --brightness lower"
-"mod+s" = "exec ~/Documents/work/scripts/driftwm/extras/scripts/window-search.sh"
+"mod+s" = "exec sh -lc 'extras=${DRIFTWM_EXTRAS:-$HOME/.config/driftwm/extras}; \"$extras/scripts/window-search.sh\"'"
 "mod+m" = "fit-window-snapped"
 "mod+shift+m" = "fit-window"
 

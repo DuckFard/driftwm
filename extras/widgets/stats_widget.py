@@ -96,8 +96,11 @@ def _set_volume(pct: int) -> None:
 
 # ── Caffeine (swayidle toggle) ─────────────────────────────
 
+_EXTRAS_DIR = Path(
+    os.environ.get("DRIFTWM_EXTRAS", Path(__file__).resolve().parents[1]),
+).expanduser()
 _LOCK_SH = str(
-    Path("~/Documents/work/scripts/driftwm/extras/scripts/lock.sh").expanduser(),
+    _EXTRAS_DIR / "scripts" / "lock.sh",
 )
 SWAYIDLE_CMD = [
     "swayidle",

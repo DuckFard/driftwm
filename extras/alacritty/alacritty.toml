@@ -1,5 +1,5 @@
 [general]
-import = ["~/Documents/work/scripts/driftwm/extras/alacritty/colors-light.toml"]
+import = ["~/.config/driftwm/extras/alacritty/colors-light.toml"]
 
 [keyboard]
 bindings = [
