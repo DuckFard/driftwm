@@ -26,6 +26,5 @@ launch calendar
 launch desktop-icons
 launch quick-notes
 launch medications
-launch trash-bin
 
 wait

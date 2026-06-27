@@ -122,7 +122,6 @@ exist, the widget will fetch weather even if an older copied config still has
 | Quick Notes | `quick-notes` | Editable persistent title/body |
 | Sidebars | none | Disabled: the two decorative background windows were removed from the launcher surface |
 | Medications | `medications` | Compact Depaz fidget approximation |
-| Trash Bin | `trash-bin` | Freedesktop trash count/size, empty/open actions |
 
 ## Unsupported Exact Behaviors
 

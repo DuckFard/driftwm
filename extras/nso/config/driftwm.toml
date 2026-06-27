@@ -63,7 +63,3 @@ position = [1088, -180]
 [[window_rules]]
 app_id = "dev.driftwm.nso.medications"
 position = [-1080, -488]
-
-[[window_rules]]
-app_id = "dev.driftwm.nso.trash_bin"
-position = [-720, -540]

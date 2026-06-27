@@ -132,7 +132,3 @@ path = "$CONFIG_FILE"
 [quick_notes]
 default_title = "Quick Notes"
 variant = "large"
-
-[trash_bin]
-empty_with_click = true
-open_with_right_click = true

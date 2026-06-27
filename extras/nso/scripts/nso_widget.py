@@ -120,7 +120,6 @@ SPECS: dict[str, WidgetSpec] = {
     "desktop-icons": WidgetSpec("desktop-icons", "dev.driftwm.nso.desktop_icons", "NSO Desktop Icons", 405, 361),
     "quick-notes": WidgetSpec("quick-notes", "dev.driftwm.nso.quick_notes", "NSO Quick Notes", 405, 361),
     "medications": WidgetSpec("medications", "dev.driftwm.nso.medications", "NSO Medications", 180, 280),
-    "trash-bin": WidgetSpec("trash-bin", "dev.driftwm.nso.trash_bin", "NSO Trash Bin", 212, 147),
 }
 
 
@@ -131,7 +130,6 @@ ALIASES = {
     "icons": "desktop-icons",
     "notes": "quick-notes",
     "meds": "medications",
-    "trash": "trash-bin",
 }
 
 
@@ -146,7 +144,6 @@ LAUNCH_ORDER = [
     "desktop-icons",
     "quick-notes",
     "medications",
-    "trash-bin",
 ]
 
 
@@ -198,19 +195,6 @@ def human_bytes(size: int) -> str:
     return f"{size} B"
 
 
-def directory_size(path: Path) -> int:
-    total = 0
-    if not path.exists():
-        return 0
-    for item in path.rglob("*"):
-        try:
-            if item.is_file() or item.is_symlink():
-                total += item.lstat().st_size
-        except OSError:
-            pass
-    return total
-
-
 def expand_config_value(value: str) -> str:
     return (
         value.replace("$HOME", str(Path.home()))
@@ -246,6 +230,8 @@ class NsoState:
                 "darkness": int(ame.get("default_darkness", 6)),
                 "activity": "idle",
                 "headpats": 0,
+                "headpat_dialogue": 0,
+                "last_headpat_at": 0,
             },
             "jine": {"index": 0, "last_sent": int(time.time()) - 4, "last_sticker": "", "last_reply": ""},
             "social": {"index": 0},
@@ -299,25 +285,45 @@ class NsoState:
             "uptime": f"{uptime_seconds // 3600}h {(uptime_seconds % 3600) // 60:02d}m",
         }
 
-    def ame_state(self, system: dict[str, Any]) -> dict[str, Any]:
+    def ame_is_stream_time(self) -> bool:
+        cfg = self.config.get("ame", {})
+        hour = datetime.now().hour
+        start = int(cfg.get("stream_start_hour", 22))
+        end = int(cfg.get("stream_end_hour", 5))
+        if start == end:
+            return True
+        if start < end:
+            return start <= hour < end
+        return hour >= start or hour < end
+
+    def ame_state(self, system: dict[str, Any], headpat_hover: bool = False) -> dict[str, Any]:
         cfg = self.config.get("ame", {})
         ame = self.state.setdefault("ame", {})
         stress = max(0, min(100, int((system["cpu"] + system["memory"]) / 2)))
         love = max(0, min(100, int(ame.get("love", cfg.get("default_love", 20)))))
         darkness = max(0, min(100, int(ame.get("darkness", cfg.get("default_darkness", 6)))))
-        hour = datetime.now().hour
-        start = int(cfg.get("stream_start_hour", 22))
-        end = int(cfg.get("stream_end_hour", 5))
-        streaming = hour >= start or hour < end or ame.get("activity") == "stream"
-        sprite = "sprites/stream/0.png" if streaming else self.ame_sprite_for(stress, love, darkness)
+        activity = str(ame.get("activity", "idle"))
+        variation = int(time.time() // 15) % 2
+        streaming = activity == "stream" or (activity == "idle" and self.ame_is_stream_time())
+        if streaming:
+            sprite = self.ame_stream_sprite()
+        elif activity in {"game", "movie"}:
+            sprite = self.ame_activity_sprite(activity, love, darkness)
+        elif headpat_hover:
+            sprite = self.ame_sprite_for(0, love, darkness, 1)
+        else:
+            sprite = self.ame_sprite_for(stress, love, darkness, variation)
         return {
             "stress": stress,
             "love": love,
             "darkness": darkness,
             "streaming": streaming,
+            "activity": activity,
             "sprite": sprite,
             "background": self.ame_background(system["uptime_seconds"]),
             "headpats": int(ame.get("headpats", 0)),
+            "headpat_dialogue": max(0, min(4, int(ame.get("headpat_dialogue", 0)))),
+            "last_headpat_at": float(ame.get("last_headpat_at", 0) or 0),
         }
 
     @staticmethod
@@ -329,19 +335,69 @@ class NsoState:
         return "bg/0.png"
 
     @staticmethod
-    def ame_sprite_for(stress: int, love: int, darkness: int) -> str:
-        stress_dir = "1" if stress >= 75 else "0"
-        love_dir = "1" if love >= 55 else "0"
-        dark_dir = "1" if darkness >= 45 else "0"
+    def ame_stat_band(value: int) -> str:
+        if value >= 80:
+            return "2"
+        if value >= 60:
+            return "1"
+        return "0"
+
+    @classmethod
+    def ame_sprite_for(cls, stress: int, love: int, darkness: int, variation: int = 0) -> str:
+        stress_dir = "1" if stress >= 80 else "0"
+        love_dir = cls.ame_stat_band(love)
+        dark_dir = cls.ame_stat_band(darkness)
+        variation_dir = "1" if variation else "0"
         candidates = [
-            f"sprites/{stress_dir}/{love_dir}/{dark_dir}/0.png",
-            f"sprites/{stress_dir}/{love_dir}/0/0.png",
-            f"sprites/{stress_dir}/0/0/0.png",
+            f"sprites/{stress_dir}/{love_dir}/{dark_dir}/{variation_dir}/0.png",
+            f"sprites/{stress_dir}/{love_dir}/{dark_dir}/0/0.png",
+            f"sprites/{stress_dir}/{love_dir}/0/0/0.png",
+            f"sprites/{stress_dir}/0/0/0/0.png",
             "sprites/0.png",
         ]
         for rel in candidates:
             if (IMAGES / "Ame" / rel).exists():
                 return rel
+        return "sprites/0.png"
+
+    @classmethod
+    def ame_activity_sprite(cls, activity: str, love: int, darkness: int) -> str:
+        love_dir = cls.ame_stat_band(love)
+        dark_dir = cls.ame_stat_band(darkness)
+        activity_dir = "1" if activity == "movie" else "0"
+        candidates = [
+            f"sprites/-1/{love_dir}/{dark_dir}/{activity_dir}/0.png",
+            f"sprites/-1/{love_dir}/{dark_dir}/0/0.png",
+            "sprites/-1/-1/-1/0/0.png",
+            "sprites/0.png",
+        ]
+        for rel in candidates:
+            if (IMAGES / "Ame" / rel).exists():
+                return rel
+        return "sprites/0.png"
+
+    @staticmethod
+    def ame_stream_sprite() -> str:
+        second = int(time.time() // 8)
+        try:
+            streams = [
+                path
+                for path in (IMAGES / "Ame" / "sprites" / "stream").iterdir()
+                if path.is_dir() and path.name.isdigit()
+            ]
+        except OSError:
+            streams = []
+        if streams:
+            stream = sorted(streams, key=lambda path: int(path.name))[second % len(streams)]
+            try:
+                sections = [path for path in stream.iterdir() if path.is_dir() and path.name.isdigit()]
+            except OSError:
+                sections = []
+            if sections:
+                section = sorted(sections, key=lambda path: int(path.name))[(second // len(streams)) % len(sections)]
+                frame = section / "0.png"
+                if frame.exists():
+                    return str(frame.relative_to(IMAGES / "Ame"))
         return "sprites/0.png"
 
     def _load_dialogue(self) -> dict[str, list[str]]:
@@ -572,23 +628,6 @@ class NsoState:
         self.save()
         return payload
 
-    def trash_state(self) -> dict[str, Any]:
-        files_dir = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share")) / "Trash" / "files"
-        try:
-            count = len(list(files_dir.iterdir())) if files_dir.exists() else 0
-        except OSError:
-            count = 0
-        size = directory_size(files_dir)
-        return {"count": count, "size": human_bytes(size), "full": count > 0}
-
-    def empty_trash(self) -> None:
-        if shutil.which("gio"):
-            subprocess.Popen(["gio", "trash", "--empty"])
-
-    def open_trash(self) -> None:
-        if shutil.which("xdg-open"):
-            subprocess.Popen(["xdg-open", "trash:///"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
     def notes_text(self) -> str:
         try:
             return NOTES_FILE.read_text(encoding="utf-8", errors="replace")
@@ -608,9 +647,14 @@ class NsoState:
     def ame_action(self, action: str) -> None:
         ame = self.state.setdefault("ame", {})
         if action == "headpat":
-            ame["headpats"] = int(ame.get("headpats", 0)) + 1
+            headpats = int(ame.get("headpats", 0)) + 1
+            ame["headpats"] = headpats
             ame["love"] = min(100, int(ame.get("love", 20)) + 1)
             ame["darkness"] = max(0, int(ame.get("darkness", 0)) - 1)
+            ame["headpat_dialogue"] = random.randrange(1, 5) if headpats % 3 == 0 else 1
+            ame["last_headpat_at"] = time.time()
+        elif action in {"idle", "game", "movie", "stream"}:
+            ame["activity"] = action
         else:
             ame["activity"] = action
         self.save()
@@ -647,6 +691,9 @@ class NsoWindow(Gtk.ApplicationWindow):
         self.mouse = (0.0, 0.0)
         self.click_regions: list[tuple[tuple[int, int, int, int], str]] = []
         self.edit_target: str | None = None
+        self.ame_head_hover = False
+        self.ame_menu_open = False
+        self.ame_stream_prompt_open = False
         self.notes_title = str(model.state.get("notes", {}).get("title", "Quick Notes"))
         self.notes_body = model.notes_text()
         try:
@@ -715,6 +762,9 @@ class NsoWindow(Gtk.ApplicationWindow):
         if self.spec.key == "social-media":
             geo = self.social_geometry()
             return int(geo["window_w"]), int(geo["window_h"])
+        if self.spec.key == "ame" and (self.ame_menu_open or self.ame_stream_prompt_open):
+            menu_x, menu_y, menu_w, menu_h = self.ame_menu_rect()
+            return max(self.spec.width, menu_x + menu_w), max(self.spec.height, menu_y + menu_h)
         return self.spec.width, self.spec.height
 
     def refresh_content_size(self, force: bool = False) -> None:
@@ -734,14 +784,48 @@ class NsoWindow(Gtk.ApplicationWindow):
 
     def on_motion(self, _controller: Gtk.EventControllerMotion, x: float, y: float) -> None:
         self.mouse = (x / self.ui_scale, y / self.ui_scale)
+        if self.spec.key == "ame":
+            overlay_open = self.ame_menu_open or self.ame_stream_prompt_open
+            hovering = not overlay_open and self.point_in_rect(self.mouse[0], self.mouse[1], self.ame_headpat_rect())
+            if hovering != self.ame_head_hover:
+                self.ame_head_hover = hovering
+                self.area.queue_draw()
 
     def on_leave(self, _controller: Gtk.EventControllerMotion) -> None:
         self.mouse = (-1.0, -1.0)
+        if self.ame_head_hover:
+            self.ame_head_hover = False
+            self.area.queue_draw()
 
     def on_key(self, _controller: Gtk.EventControllerKey, keyval: int, _keycode: int, state: Gdk.ModifierType) -> bool:
+        name = Gdk.keyval_name(keyval) or ""
+        if self.spec.key == "ame":
+            if name == "Escape":
+                if self.ame_menu_open or self.ame_stream_prompt_open:
+                    self.ame_menu_open = False
+                    self.ame_stream_prompt_open = False
+                    self.refresh_content_size()
+                    self.area.queue_draw()
+                    return True
+                return False
+            key_actions = {
+                "h": "ame.headpat",
+                "H": "ame.headpat",
+                "a": "ame.menu",
+                "A": "ame.menu",
+                "1": "ame.activity:game",
+                "2": "ame.activity:movie",
+                "3": "ame.activity:stream",
+                "4": "ame.activity:idle",
+            }
+            action = key_actions.get(name)
+            if action:
+                self.dispatch(action, 1)
+                self.area.queue_draw()
+                return True
+            return False
         if self.spec.key != "quick-notes" or not self.edit_target:
             return False
-        name = Gdk.keyval_name(keyval) or ""
         target = "notes_title" if self.edit_target == "title" else "notes_body"
         value = getattr(self, target)
         if name == "Escape":
@@ -766,6 +850,11 @@ class NsoWindow(Gtk.ApplicationWindow):
     def is_draggable_point(self, x: float, y: float) -> bool:
         if self.spec.key == "quick-notes" and 62 <= y <= 320:
             return False
+        if self.spec.key == "ame":
+            if (self.ame_menu_open or self.ame_stream_prompt_open) and self.point_in_rect(x, y, self.ame_menu_rect()):
+                return False
+            if self.point_in_rect(x, y, self.ame_headpat_rect()):
+                return False
         for (rx, ry, rw, rh), _action in self.click_regions:
             if rx <= x <= rx + rw and ry <= y <= ry + rh:
                 return False
@@ -779,7 +868,6 @@ class NsoWindow(Gtk.ApplicationWindow):
             "desktop-icons",
             "quick-notes",
             "medications",
-            "trash-bin",
             "welcome",
         }
 
@@ -802,7 +890,7 @@ class NsoWindow(Gtk.ApplicationWindow):
         button = gesture.get_current_button()
         if self.spec.key == "quick-notes":
             self.edit_target = "title" if 62 <= y <= 90 else "body" if 96 <= y <= 320 else None
-        for (rx, ry, rw, rh), action in self.click_regions:
+        for (rx, ry, rw, rh), action in reversed(self.click_regions):
             if rx <= x <= rx + rw and ry <= y <= ry + rh:
                 self.dispatch(action, button)
                 self.area.queue_draw()
@@ -826,10 +914,46 @@ class NsoWindow(Gtk.ApplicationWindow):
             self.refresh_content_size()
         elif action.startswith("media:"):
             media_control(action.split(":", 1)[1], self.model.config)
+        elif action == "ame.menu":
+            self.ame_menu_open = not self.ame_menu_open
+            self.ame_stream_prompt_open = False
+            self.ame_head_hover = False
+            self.refresh_content_size()
+        elif action == "ame.menu.close":
+            self.ame_menu_open = False
+            self.ame_stream_prompt_open = False
+            self.refresh_content_size()
+        elif action.startswith("ame.activity:"):
+            activity = action.split(":", 1)[1]
+            if activity == "stream" and not self.model.ame_is_stream_time():
+                self.ame_menu_open = False
+                self.ame_stream_prompt_open = True
+                self.refresh_content_size()
+                return
+            self.ame_menu_open = False
+            self.ame_stream_prompt_open = False
+            self.ame_head_hover = False
+            self.refresh_content_size()
+            self.model.ame_action(activity)
+        elif action == "ame.stream.confirm":
+            self.ame_menu_open = False
+            self.ame_stream_prompt_open = False
+            self.ame_head_hover = False
+            self.refresh_content_size()
+            self.model.ame_action("stream")
+        elif action == "ame.stream.cancel":
+            self.ame_menu_open = True
+            self.ame_stream_prompt_open = False
+            self.ame_head_hover = False
+            self.refresh_content_size()
         elif action == "ame.headpat":
             self.model.ame_action("headpat")
-        elif action == "trash":
-            self.model.open_trash() if button == 3 else self.model.empty_trash()
+        elif action == "ame.settings":
+            self.ame_menu_open = False
+            self.ame_stream_prompt_open = False
+            self.refresh_content_size()
+            if shutil.which("xdg-open"):
+                subprocess.Popen(["xdg-open", str(CONFIG_FILE)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         elif action == "meds":
             current = int(self.model.state.setdefault("meds", {}).get("spin", 0))
             self.model.state["meds"]["spin"] = current + 1
@@ -860,6 +984,19 @@ class NsoWindow(Gtk.ApplicationWindow):
 
     def region(self, rect: tuple[int, int, int, int], action: str) -> None:
         self.click_regions.append((rect, action))
+
+    @staticmethod
+    def point_in_rect(x: float, y: float, rect: tuple[int, int, int, int]) -> bool:
+        rx, ry, rw, rh = rect
+        return rx <= x <= rx + rw and ry <= y <= ry + rh
+
+    @staticmethod
+    def ame_headpat_rect() -> tuple[int, int, int, int]:
+        return (110, 64, 148, 154)
+
+    @staticmethod
+    def ame_menu_rect() -> tuple[int, int, int, int]:
+        return (55, 55, 508, 291)
 
     def draw_image(self, cr: Any, rel: str | Path, x: int, y: int, width: int | None = None, height: int | None = None) -> None:
         pix = self.images.pixbuf(rel, width, height)
@@ -910,6 +1047,13 @@ class NsoWindow(Gtk.ApplicationWindow):
             except Exception:
                 pass
         cr.paint()
+        cr.restore()
+
+    def draw_image_clipped(self, cr: Any, rel: str | Path, x: int, y: int, width: int, height: int) -> None:
+        cr.save()
+        cr.rectangle(x, y, width, height)
+        cr.clip()
+        self.draw_image(cr, rel, x, y, width, height)
         cr.restore()
 
     def make_text_layout(
@@ -1013,16 +1157,73 @@ class NsoWindow(Gtk.ApplicationWindow):
         self.draw_text(cr, "hover icons for status / gear opens config", 40, 316, 9, PURPLE, 320, "Dinkie Bitmap 7px")
 
     def draw_ame(self, cr: Any) -> None:
-        state = self.model.ame_state(self.system)
-        self.draw_image(cr, f"Ame/{state['background']}", 10, 39, 348, 227)
+        state = self.model.ame_state(self.system, self.ame_head_hover)
+        content_x, content_y, content_w, content_h = 8, 42, 348, 227
         self.draw_image(cr, "Ame/348.png", 0, 0)
-        self.draw_image(cr, f"Ame/{state['sprite']}", 10, 39)
-        self.draw_image(cr, "Ame/button_heart.png", 308, 246)
-        self.draw_image(cr, "Ame/button_gear.png", 334, 246)
-        self.region((300, 235, 42, 46), "ame.headpat")
+        self.draw_image_clipped(cr, f"Ame/{state['background']}", content_x, content_y, content_w, content_h)
+        self.draw_image_clipped(cr, f"Ame/{state['sprite']}", content_x, content_y, content_w, content_h)
+        self.draw_text(cr, "Webcam", 34, 14, 12, PURPLE, 230, "Dinkie Bitmap 7px")
+        self.draw_close(cr)
+        self.draw_image(cr, "Ame/button_heart.png", 284, 11)
+        self.draw_image(cr, "Ame/button_gear.png", 308, 11)
+        self.region((284, 11, 20, 20), "ame.menu")
+        self.region((308, 11, 20, 20), "ame.settings")
+        if state["activity"] == "idle" and not state["streaming"]:
+            self.region(self.ame_headpat_rect(), "ame.headpat")
+        show_dialogue = self.ame_head_hover or time.time() - state["last_headpat_at"] < 2.0
+        if show_dialogue and state["activity"] == "idle" and not state["streaming"]:
+            dialogue = state["headpat_dialogue"] if time.time() - state["last_headpat_at"] < 2.0 else 0
+            self.draw_image_clipped(cr, f"Ame/dialogue/{dialogue}.png", content_x, content_y, content_w, content_h)
         mood = "PISSED" if state["stress"] >= 80 else "STRESSED" if state["stress"] >= 55 else "NORMAL"
-        self.draw_text(cr, mood, 25, 252, 10, WARN if state["stress"] >= 80 else PURPLE, 140, "Dinkie Bitmap 7px")
-        self.draw_text(cr, f"LOVE {state['love']:02d}  DARK {state['darkness']:02d}", 25, 267, 8, PURPLE, 210, "Dinkie Bitmap 7px")
+        self.draw_text(cr, mood, 24, 247, 10, WARN if state["stress"] >= 80 else PURPLE, 140, "Dinkie Bitmap 7px")
+        self.draw_text(cr, f"LOVE {state['love']:02d}  DARK {state['darkness']:02d}", 24, 260, 8, PURPLE, 210, "Dinkie Bitmap 7px")
+        if self.ame_menu_open:
+            self.draw_ame_menu(cr, state)
+        elif self.ame_stream_prompt_open:
+            self.draw_ame_stream_prompt(cr)
+
+    def draw_ame_menu(self, cr: Any, state: dict[str, Any]) -> None:
+        menu_x, menu_y, menu_w, menu_h = self.ame_menu_rect()
+        self.draw_image(cr, "Ame/menu/window.png", menu_x, menu_y)
+        self.draw_text(cr, "Activities", menu_x + 34, menu_y + 14, 12, PURPLE, 220, "Dinkie Bitmap 7px")
+        close_x, close_y = menu_x + menu_w - 34, menu_y + 11
+        self.draw_image(cr, "button_close.png", close_x, close_y)
+        self.region((close_x, close_y, 20, 20), "ame.menu.close")
+        self.draw_text(cr, "Activities", menu_x + 130, menu_y + 82, 18, PURPLE, 240, "zpix")
+
+        entries = [
+            ("game", "game.png", "Game"),
+            ("movie", "movie.png", "Movie"),
+            ("stream", "youtube.png", "Stream"),
+            ("idle", "ame.png", "Idle"),
+        ]
+        icon_y = menu_y + 130
+        for index, (activity, icon, label) in enumerate(entries):
+            icon_x = menu_x + 125 + index * 95
+            if state["activity"] == activity:
+                self.fill_rect(cr, icon_x - 5, icon_y - 5, 74, 74, (240 / 255, 209 / 255, 241 / 255))
+            self.draw_image(cr, f"Ame/menu/{icon}", icon_x, icon_y)
+            if activity == "stream" and not self.model.ame_is_stream_time():
+                self.draw_text(cr, "?", icon_x + 49, icon_y + 1, 18, WARN, 28, "PixelMplus10", weight="bold")
+            self.draw_text(cr, label, icon_x - 11, icon_y + 70, 12, PURPLE, 86, "Dinkie Bitmap 7px", align="center")
+            self.region((icon_x - 5, icon_y - 5, 74, 94), f"ame.activity:{activity}")
+
+    def draw_ame_stream_prompt(self, cr: Any) -> None:
+        menu_x, menu_y, menu_w, _menu_h = self.ame_menu_rect()
+        self.draw_image(cr, "Ame/menu/window_streamday.png", menu_x, menu_y)
+        self.draw_text(cr, "Stream", menu_x + 34, menu_y + 14, 12, PURPLE, 220, "Dinkie Bitmap 7px")
+        close_x, close_y = menu_x + menu_w - 34, menu_y + 11
+        self.draw_image(cr, "button_close.png", close_x, close_y)
+        self.region((close_x, close_y, 20, 20), "ame.stream.cancel")
+        self.draw_text(cr, "Stream during daytime?", menu_x + 68, menu_y + 100, 15, PURPLE, 365, "PixelMplus10", align="center")
+
+        yes_x, no_x, button_y = menu_x + 32, menu_x + 272, menu_y + 165
+        self.draw_image(cr, "Ame/menu/button.png", yes_x, button_y)
+        self.draw_image(cr, "Ame/menu/button.png", no_x, button_y)
+        self.draw_text(cr, "Yes", yes_x + 100, button_y + 10, 14, PURPLE, None, "PixelMplus10", align="center")
+        self.draw_text(cr, "No", no_x + 100, button_y + 10, 14, PURPLE, None, "PixelMplus10", align="center")
+        self.region((yes_x, button_y, 200, 40), "ame.stream.confirm")
+        self.region((no_x, button_y, 200, 40), "ame.stream.cancel")
 
     def draw_jine(self, cr: Any) -> None:
         self.draw_frame(cr, "JINE/window_new.png", "JINE")
@@ -1209,20 +1410,6 @@ class NsoWindow(Gtk.ApplicationWindow):
             self.draw_image(cr, "Medications/depaz_drug.png", 29 + x, y_offset + y)
         self.region((29, y_offset, 118, 180), "meds")
 
-    def draw_trash_bin(self, cr: Any) -> None:
-        cr.set_source_rgb(*PINK)
-        cr.paint()
-        trash = self.model.trash_state()
-        icon = "Trash Bin/icon_cho.png" if trash["full"] else "Trash Bin/icon_ame.png"
-        self.draw_image(cr, icon, 18, 16)
-        if trash["full"]:
-            self.draw_image(cr, "Trash Bin/Badge.png", 56, 10)
-        self.draw_text(cr, "Magic Paper", 82, 23, 11, PURPLE_DARK, 110, "Dinkie Bitmap 7px")
-        self.draw_text(cr, f"{trash['count']} items", 82, 51, 11, PURPLE_DARK, 110)
-        self.draw_text(cr, trash["size"], 82, 77, 10, PURPLE, 110)
-        self.draw_text(cr, "left empty / right open", 20, 112, 8, PURPLE, 160, "Dinkie Bitmap 7px")
-        self.region((0, 0, self.spec.width, self.spec.height), "trash")
-
     def draw_welcome(self, cr: Any) -> None:
         self.draw_frame(cr, "Welcome/window.png", "Welcome")
         accepted = bool(self.model.state.setdefault("welcome", {}).get("warning_accepted", False))
@@ -1247,7 +1434,6 @@ class NsoWindow(Gtk.ApplicationWindow):
             ("desktop-icons", "text.png", "Icons"),
             ("quick-notes", "text.png", "Notes"),
             ("medications", "trash.png", "Meds"),
-            ("trash-bin", "trash.png", "Trash"),
         ]
         for i, (skin, icon, label) in enumerate(launchers):
             col = i % 5
