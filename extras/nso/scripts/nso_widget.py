@@ -87,6 +87,20 @@ WARN = (231 / 255, 83 / 255, 83 / 255)
 WHITE = (1, 1, 1)
 BLACK = (0, 0, 0)
 PLACEHOLDER_VALUES = {"paste here!", "paste here", "none", "null", "changeme", "your-api-key", "your-city-id"}
+MONTH_NAMES = [
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+]
 
 CLOSE_POS = {
     "welcome": (764, 11),
@@ -1170,6 +1184,14 @@ class NsoWindow(Gtk.ApplicationWindow):
             return f"{hours}:{minutes:02d}:{seconds % 60:02d}"
         return f"{minutes}:{seconds % 60:02d}"
 
+    @staticmethod
+    def fmt_clock(now: datetime, hour24: bool) -> str:
+        if hour24:
+            return f"{now.hour:02d}:{now.minute:02d}"
+        period = "AM" if now.hour < 12 else "PM"
+        hour = now.hour % 12 or 12
+        return f"{hour}:{now.minute:02d} {period}"
+
     def draw_task_manager(self, cr: Any) -> None:
         self.draw_frame(cr, "Task Manager/window.png", "Task Manager")
         cfg = self.model.config.get("task_manager", {})
@@ -1407,12 +1429,11 @@ class NsoWindow(Gtk.ApplicationWindow):
             self.draw_text(cr, primary, 95, 73, 14, PURPLE_DARK, 250)
             self.draw_text(cr, secondary, 95, 100, 9, PURPLE, 250, "Dinkie Bitmap 7px")
         else:
-            self.draw_text(cr, now.strftime("%B %-d, %Y"), 95, 67, 23, PURPLE_DARK)
+            self.draw_text(cr, f"{MONTH_NAMES[now.month - 1]} {now.day}, {now.year}", 95, 67, 23, PURPLE_DARK)
             calendar_cfg = self.model.config.get("calendar", {})
             time1224 = str(calendar_cfg.get("TimeFormat1224", calendar_cfg.get("time_format_1224", "")))
             hour24 = bool(calendar_cfg.get("hour24")) or time1224 == "24"
-            fmt = "%H:%M" if hour24 else "%I:%M %p"
-            self.draw_text(cr, now.strftime(fmt).lstrip("0"), 95, 99, 18, PURPLE_DARK)
+            self.draw_text(cr, self.fmt_clock(now, hour24), 95, 99, 18, PURPLE_DARK)
 
     def draw_desktop_icons(self, cr: Any) -> None:
         self.draw_frame(cr, "Desktop Icons/window_big.png", "Desktop Icons")
