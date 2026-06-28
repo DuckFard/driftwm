@@ -73,7 +73,9 @@ User overrides are read from:
 
 Start from [`config/nso.example.toml`](config/nso.example.toml). The default UI
 scale is `1.5`, so each native widget is rendered about 50% larger while keeping
-the upstream Rainmeter coordinate system for drawing and clicks.
+the upstream Rainmeter coordinate system for drawing and clicks. Webcam/Ame also
+has its own `[ame] scale` multiplier, which defaults to `1.5` and makes only that
+widget another 50% larger.
 
 Persistent state is stored in:
 
@@ -89,6 +91,9 @@ as `LocationCode`, your OpenWeatherMap key as `ApiKey`, and `Units` as
 
 ```toml
 [ui]
+scale = 1.5
+
+[ame]
 scale = 1.5
 
 [calendar]

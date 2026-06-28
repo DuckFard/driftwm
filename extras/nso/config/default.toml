@@ -9,6 +9,7 @@ disk_critical = 90
 
 [ame]
 debug = false
+scale = 1.5
 update_ms = 250
 stream_start_hour = 22
 stream_end_hour = 5

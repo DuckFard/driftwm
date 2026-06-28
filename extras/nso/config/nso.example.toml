@@ -5,6 +5,11 @@
 # logical coordinates and click regions.
 scale = 1.5
 
+[ame]
+# Extra Webcam-only multiplier. With the default UI scale, 1.5 makes Webcam
+# 50% bigger than the other NSO widgets.
+scale = 1.5
+
 [calendar]
 # Upstream-compatible 12/24 hour selector from Settings.inc.
 TimeFormat1224 = 12

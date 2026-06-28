@@ -716,10 +716,18 @@ class NsoWindow(Gtk.ApplicationWindow):
         self.notes_title = str(model.state.get("notes", {}).get("title", "Quick Notes"))
         self.notes_body = model.notes_text()
         try:
-            self.ui_scale = float(model.config.get("ui", {}).get("scale", 1.5))
+            base_scale = float(model.config.get("ui", {}).get("scale", 1.5))
         except (TypeError, ValueError):
-            self.ui_scale = 1.5
-        self.ui_scale = max(0.75, min(3.0, self.ui_scale))
+            base_scale = 1.5
+        base_scale = max(0.75, min(3.0, base_scale))
+        widget_scale = 1.0
+        if spec.key == "ame":
+            try:
+                widget_scale = float(model.config.get("ame", {}).get("scale", 1.5))
+            except (TypeError, ValueError):
+                widget_scale = 1.5
+            widget_scale = max(0.5, min(3.0, widget_scale))
+        self.ui_scale = max(0.75, min(4.5, base_scale * widget_scale))
         self.logical_width = spec.width
         self.logical_height = spec.height
         self.refresh_content_size(force=True)
