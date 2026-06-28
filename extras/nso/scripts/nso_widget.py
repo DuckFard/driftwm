@@ -1390,44 +1390,48 @@ class NsoWindow(Gtk.ApplicationWindow):
         image_w = int(geo["image_w"])
         image_h = int(geo["image_h"])
         button_h = int(geo["button_h"])
-        window_h = int(geo["window_h"])
+        caption_h = 24
+        engagement_h = 25
+        image_body_h = max(80, image_h - caption_h - engagement_h)
         self.draw_frame(cr, str(geo["frame"]), "Social Media")
         user = str(tweet.get("user", "@x_angelkawaii_x"))
         icon = "Social Media/icon_cho.png" if user == "@x_angelkawaii_x" else "Social Media/icon_ame.png"
         if tweet.get("image"):
-            self.draw_image_cover(cr, f"Social Media/Tweets/{tweet['image']}", 8, 42, image_w, image_h)
+            self.draw_image_cover(cr, f"Social Media/Tweets/{tweet['image']}", 8, 42, image_w, image_body_h)
         else:
-            self.draw_image(cr, "Social Media/nothing.png", 184, 42 + image_h // 2 - 16)
+            self.draw_image(cr, "Social Media/nothing.png", 184, 42 + image_body_h // 2 - 16)
         self.fill_rect(cr, 8, 42, image_w, button_h, BLACK)
         self.draw_image(cr, icon, 11, 44, 20, 20)
         self.draw_text(cr, user, 36, 46, 10, WHITE, 235)
 
-        footer_y = window_h - (22 + button_h)
-        count_y = window_h - (22 + button_h - 3)
-        self.fill_rect(cr, 8, footer_y, image_w, button_h, BLACK)
+        caption_y = 42 + image_body_h
+        engagement_y = caption_y + caption_h
+        count_y = engagement_y + 5
+        self.fill_rect(cr, 8, caption_y, image_w, caption_h, BLACK)
         body = str(tweet.get("text", ""))
         if body:
-            self.draw_text(cr, body, 16, footer_y + 5, 10, WHITE, image_w - 16, "PixelMplus10", ellipsize=True)
-        self.region((8, footer_y, image_w // 2, button_h), "social.engage:retweet")
-        self.region((8 + image_w // 2, footer_y, image_w - image_w // 2, button_h), "social.engage:like")
+            self.draw_text(cr, body, 16, caption_y + 5, 10, WHITE, image_w - 16, "PixelMplus10", ellipsize=True)
+        self.fill_rect(cr, 8, engagement_y, image_w, engagement_h, BLACK)
+        self.region((8, engagement_y, image_w // 2, engagement_h), "social.engage:retweet")
+        self.region((8 + image_w // 2, engagement_y, image_w - image_w // 2, engagement_h), "social.engage:like")
         retweet_x = round(405 * 0.22)
         like_x = round(405 * 0.60)
         self.draw_image(cr, "Social Media/icon_retweet.png", retweet_x, count_y, 14, 14)
         self.draw_text(cr, str(tweet.get("retweets", 0)), retweet_x + 17, count_y + 2, 9, (63 / 255, 155 / 255, 83 / 255), 90, "Press Start 2P")
-        self.region((retweet_x - 8, count_y - 6, 132, max(26, button_h + 8)), "social.engage:retweet")
+        self.region((retweet_x - 8, engagement_y, 132, engagement_h), "social.engage:retweet")
         self.draw_image(cr, "Social Media/icon_star.png", like_x, count_y, 12, 12)
         self.draw_text(cr, str(tweet.get("likes", 0)), like_x + 15, count_y + 2, 9, (182 / 255, 179 / 255, 101 / 255), 90, "Press Start 2P")
-        self.region((like_x - 8, count_y - 6, 132, max(26, button_h + 8)), "social.engage:like")
+        self.region((like_x - 8, engagement_y, 132, engagement_h), "social.engage:like")
         self.draw_image(cr, "Social Media/Settings/button_gear.png", 321, 11)
         self.draw_image(cr, "Social Media/button_right.png", 345, 11)
         self.region((317, 7, 28, 28), "social.settings")
         self.region((341, 7, 28, 28), "social.next")
         if self.social_feedback and self.social_feedback[1] > time.time():
             kind, _until = self.social_feedback
-            label = "REPOST +1" if kind == "retweet" else "LIKE +1"
-            x = retweet_x + 30 if kind == "retweet" else like_x + 30
+            label = "+1"
+            x = retweet_x + 83 if kind == "retweet" else like_x + 72
             color = (63 / 255, 155 / 255, 83 / 255) if kind == "retweet" else (182 / 255, 179 / 255, 101 / 255)
-            self.draw_text(cr, label, x, footer_y - 16, 9, color, 110, "Dinkie Bitmap 7px")
+            self.draw_text(cr, label, x, count_y + 2, 9, color, 30, "Dinkie Bitmap 7px")
         elif self.social_feedback:
             self.social_feedback = None
         if self.social_settings_open:
