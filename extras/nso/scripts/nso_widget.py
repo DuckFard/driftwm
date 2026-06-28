@@ -39,6 +39,7 @@ STATE_DIR = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state"))
 CONFIG_FILE = CONFIG_DIR / "nso.toml"
 STATE_FILE = STATE_DIR / "state.json"
 NOTES_FILE = DATA_DIR / "quick-notes.txt"
+WEATHER_ERROR_REFRESH_SECONDS = 120
 
 
 def _install_fontconfig() -> None:
@@ -618,8 +619,11 @@ class NsoState:
                 refresh = int(cfg["UpdatesEvery"])
             except (TypeError, ValueError):
                 pass
-        if cache.get("updated_at", 0) and now - cache["updated_at"] < refresh:
-            return cache.get("payload", {"available": False, "status": "cached-empty"})
+        cached_payload = cache.get("payload", {"available": False, "status": "cached-empty"})
+        cache_age = now - float(cache.get("updated_at", 0) or 0)
+        cache_ttl = refresh if cached_payload.get("status") == "ok" else min(refresh, WEATHER_ERROR_REFRESH_SECONDS)
+        if cache.get("updated_at", 0) and cache_age < cache_ttl:
+            return cached_payload
         units = self._weather_config_value(cfg, "units", "Units") or "metric"
         location_key = "id" if city_id.isdigit() else "q"
         query = urllib.parse.urlencode({location_key: city_id, "appid": api_key, "units": units})
@@ -1365,7 +1369,11 @@ class NsoWindow(Gtk.ApplicationWindow):
         now = datetime.now()
         default_icon = "3.png" if now.hour > 18 else "2.png" if now.hour > 17 else "1.png" if now.hour > 5 else "3.png"
         weather = self.model.weather_state()
-        icon = f"Calendar/Icon/{weather.get('icon')}.png" if weather.get("available") and weather.get("icon") else f"Calendar/Default/{default_icon}"
+        icon = f"Calendar/Default/{default_icon}"
+        if weather.get("available") and weather.get("icon"):
+            weather_icon = f"Calendar/Icon/{weather.get('icon')}.png"
+            if (IMAGES / weather_icon).exists():
+                icon = weather_icon
         self.draw_image(cr, icon, 20, 64)
         hover = 0 <= self.mouse[0] <= self.spec.width and 0 <= self.mouse[1] <= self.spec.height
         if hover and weather.get("available"):
