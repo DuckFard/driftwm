@@ -83,6 +83,9 @@ PURPLE = (77 / 255, 35 / 255, 207 / 255)
 PURPLE_DARK = (77 / 255, 33 / 255, 203 / 255)
 PINK = (255 / 255, 248 / 255, 255 / 255)
 BLUE = (110 / 255, 181 / 255, 223 / 255)
+HISTOGRAM_BG = (219 / 255, 190 / 255, 237 / 255)
+HISTOGRAM_BLUE = (110 / 255, 180 / 255, 225 / 255)
+GRAY = (152 / 255, 152 / 255, 152 / 255)
 WARN = (231 / 255, 83 / 255, 83 / 255)
 WHITE = (1, 1, 1)
 BLACK = (0, 0, 0)
@@ -269,6 +272,9 @@ class NsoState:
             },
             "jine": {"index": 0, "last_sent": int(time.time()) - 4, "last_sticker": "", "last_reply": ""},
             "social": {"index": 0, "next_mode": "sequential", "engagement": {}},
+            "task_manager": {
+                "mode": str(self.config.get("task_manager", {}).get("mode", "system")),
+            },
             "notes": {"title": self.config.get("quick_notes", {}).get("default_title", "Quick Notes")},
             "welcome": {"warning_accepted": False},
             "weather_cache": {},
@@ -305,8 +311,12 @@ class NsoState:
         used_mem = total_mem - mem.get("MemAvailable", 0)
         memory = int(used_mem / total_mem * 100)
 
-        disk_path = self.config.get("task_manager", {}).get("disk_path", "/")
-        usage = shutil.disk_usage(disk_path)
+        disk_path = str(self.config.get("task_manager", {}).get("disk_path", "/"))
+        try:
+            usage = shutil.disk_usage(disk_path)
+        except OSError:
+            disk_path = "/"
+            usage = shutil.disk_usage(disk_path)
         uptime_seconds = int(float(Path("/proc/uptime").read_text(encoding="utf-8").split()[0]))
         disk = int(usage.used / max(1, usage.total) * 100)
         return {
@@ -315,9 +325,20 @@ class NsoState:
             "disk": disk,
             "memory_label": f"{used_mem / 1048576:.1f}/{total_mem / 1048576:.1f} GiB",
             "disk_label": f"{human_bytes(usage.used)}/{human_bytes(usage.total)}",
+            "disk_path": disk_path,
             "uptime_seconds": uptime_seconds,
             "uptime": f"{uptime_seconds // 3600}h {(uptime_seconds % 3600) // 60:02d}m",
         }
+
+    def task_manager_mode(self) -> str:
+        mode = str(self.state.setdefault("task_manager", {}).get("mode", ""))
+        if not mode:
+            mode = str(self.config.get("task_manager", {}).get("mode", "system"))
+        return "original" if mode == "original" else "system"
+
+    def set_task_manager_mode(self, mode: str) -> None:
+        self.state.setdefault("task_manager", {})["mode"] = "original" if mode == "original" else "system"
+        self.save()
 
     def ame_is_stream_time(self) -> bool:
         cfg = self.config.get("ame", {})
@@ -763,6 +784,13 @@ class NsoWindow(Gtk.ApplicationWindow):
         self.ame_stream_prompt_open = False
         self.social_settings_open = False
         self.social_feedback: tuple[str, float] | None = None
+        self.task_settings_open = False
+        self.task_history = {
+            "cpu": [int(self.system.get("cpu", 0))],
+            "memory": [int(self.system.get("memory", 0))],
+            "disk": [int(self.system.get("disk", 0))],
+        }
+        self.task_history_last = 0.0
         self.notes_title = str(model.state.get("notes", {}).get("title", "Quick Notes"))
         self.notes_body = model.notes_text()
         try:
@@ -811,6 +839,14 @@ class NsoWindow(Gtk.ApplicationWindow):
 
     def tick(self) -> bool:
         self.system = self.model.system_state()
+        if self.spec.key == "task-manager":
+            now = time.time()
+            if now - self.task_history_last >= 1.0:
+                self.task_history_last = now
+                for key in ("cpu", "memory", "disk"):
+                    values = self.task_history.setdefault(key, [])
+                    values.append(int(self.system.get(key, 0)))
+                    del values[:-130]
         self.refresh_content_size()
         self.area.queue_draw()
         return True
@@ -879,6 +915,12 @@ class NsoWindow(Gtk.ApplicationWindow):
 
     def on_key(self, _controller: Gtk.EventControllerKey, keyval: int, _keycode: int, state: Gdk.ModifierType) -> bool:
         name = Gdk.keyval_name(keyval) or ""
+        if self.spec.key == "task-manager":
+            if name == "Escape" and self.task_settings_open:
+                self.task_settings_open = False
+                self.area.queue_draw()
+                return True
+            return False
         if self.spec.key == "social-media":
             if name == "Escape" and self.social_settings_open:
                 self.social_settings_open = False
@@ -1007,6 +1049,12 @@ class NsoWindow(Gtk.ApplicationWindow):
             self.refresh_content_size()
         elif action.startswith("social.next-mode:"):
             self.model.set_social_next_mode(action.split(":", 1)[1])
+        elif action == "task.settings":
+            self.task_settings_open = not self.task_settings_open
+        elif action == "task.settings.close":
+            self.task_settings_open = False
+        elif action.startswith("task.mode:"):
+            self.model.set_task_manager_mode(action.split(":", 1)[1])
         elif action.startswith("social.engage:"):
             kind = action.split(":", 1)[1]
             self.model.social_engage(kind)
@@ -1246,26 +1294,167 @@ class NsoWindow(Gtk.ApplicationWindow):
         hour = now.hour % 12 or 12
         return f"{hour}:{now.minute:02d} {period}"
 
+    def task_threshold(self, key: str) -> int:
+        cfg = self.model.config.get("task_manager", {})
+        try:
+            return int(cfg.get(f"{key}_critical", cfg.get("critical", 80)))
+        except (TypeError, ValueError):
+            return 80
+
+    def draw_histogram(self, cr: Any, values: list[int], x: int, y: int, w: int, h: int) -> None:
+        self.fill_rect(cr, x, y, w, h, HISTOGRAM_BG)
+        samples = values[-w:] if values else [0]
+        start_x = x + w - len(samples)
+        for index, value in enumerate(samples):
+            pct = max(0, min(100, int(value)))
+            bar_h = round(h * pct / 100)
+            if pct and bar_h == 0:
+                bar_h = 1
+            if bar_h:
+                self.fill_rect(cr, start_x + index, y + h - bar_h, 1, bar_h, HISTOGRAM_BLUE)
+
+    def task_manager_text(self) -> dict[str, dict[str, Any]]:
+        disk_path = str(self.system.get("disk_path", self.model.config.get("task_manager", {}).get("disk_path", "/")))
+        return {
+            "system": {
+                "labels": {
+                    "screen": "Screen Time",
+                    "cpu": "CPU",
+                    "memory": "Memory",
+                    "disk": f"Used Space ({disk_path})",
+                },
+                "tooltips": {
+                    "screen": (
+                        "screen time measures the time since your last restart of your computer.\n"
+                        "the longer you stay on your computer,\n"
+                        "the longer the screen time, so go outside!"
+                    ),
+                    "cpu": (
+                        "your CPU is what makes your computer alive. it helps your pc perform actions in such "
+                        "a fast rate. your pc temperature also depends on your CPU so keep it cool."
+                    ),
+                    "memory": (
+                        "your RAM is a memory that stores temporary data on it. your applications need memory "
+                        "to work properly. be careful as your apps may run slow when the number is too high!"
+                    ),
+                    "disk": (
+                        "your used space shows how much of your files have occupied your disk. if you keep this "
+                        "high, ame would be overwhelmed by organizing your messy files."
+                    ),
+                },
+                "tooltip_text_y": {"screen": 138, "cpu": 57, "memory": 130, "disk": 203},
+            },
+            "original": {
+                "labels": {
+                    "screen": "Followers",
+                    "cpu": "Stress",
+                    "memory": "Affection",
+                    "disk": "Mental Darkness",
+                },
+                "tooltips": {
+                    "screen": (
+                        "this shows you how many people are looking at my social media and streams. the more "
+                        "people watch, the more they fulfill my need for approval! our goal is to make this "
+                        "number as big as possible!"
+                    ),
+                    "cpu": (
+                        "this shows you how much pressure im feeling. i might start acting weird if it gets too "
+                        "high, so watch out! i may even become more scared of the internet by day..."
+                    ),
+                    "memory": (
+                        "this displays how much i love you! it'd be sad if i don't love you enough, but if i "
+                        "love you TOO much i might be hard to handle. so try to strike a good balance, ok? <3"
+                    ),
+                    "disk": (
+                        "this lets you know how im doing mentally. how well i cope with reality will change "
+                        "depending on the numbers. it might have a bigger influence on my future rather than my "
+                        "present state in the game!"
+                    ),
+                },
+                "tooltip_text_y": {"screen": 130, "cpu": 51, "memory": 124, "disk": 197},
+            },
+        }
+
+    def draw_task_tooltip(self, cr: Any, mode_text: dict[str, Any], key: str) -> None:
+        image_positions = {
+            "screen": ("Task Manager/tooltipflip.png", 40, 103, 54),
+            "cpu": ("Task Manager/tooltip.png", 40, 44, 53),
+            "memory": ("Task Manager/tooltip.png", 40, 117, 53),
+            "disk": ("Task Manager/tooltip.png", 40, 190, 53),
+        }
+        image, x, y, text_x = image_positions[key]
+        self.draw_image(cr, image, x, y)
+        self.draw_text(
+            cr,
+            str(mode_text["tooltips"][key]),
+            text_x,
+            int(mode_text["tooltip_text_y"][key]),
+            11,
+            PURPLE_DARK,
+            320,
+            "PixelMplus10",
+            ellipsize=False,
+        )
+
+    def draw_task_settings(self, cr: Any) -> None:
+        self.draw_image(cr, "Calendar/window.png", 0, 0)
+        self.draw_text(cr, "Task Manager Settings", 34, 14, 12, PURPLE, 250, "Dinkie Bitmap 7px")
+        self.draw_image(cr, "button_close.png", 369, 11)
+        self.region((365, 7, 28, 28), "task.settings.close")
+
+        mode = self.model.task_manager_mode()
+        options = [("original", "Original", 35, 70, 65), ("system", "System", 205, 70, 235)]
+        for value, label, x, y, text_x in options:
+            selected = mode == value
+            self.draw_image(cr, f"Social Media/Settings/{'enabled' if selected else 'disabled'}.png", x, y)
+            self.draw_text(cr, label, text_x, y, 14, PURPLE, 130, "PixelMplus10")
+            self.region((x - 6, y - 6, 150, 34), f"task.mode:{value}")
+
+        disk_path = str(self.system.get("disk_path", self.model.config.get("task_manager", {}).get("disk_path", "/")))
+        self.draw_text(cr, f"Disk Location: {disk_path}", 35, 100, 15, PURPLE, 300, "PixelMplus10")
+
     def draw_task_manager(self, cr: Any) -> None:
         self.draw_frame(cr, "Task Manager/window.png", "Task Manager")
-        cfg = self.model.config.get("task_manager", {})
+        self.draw_image(cr, "Media Player/Settings/button_gear.png", 345, 11)
+        self.region((341, 7, 28, 28), "task.settings")
+
+        mode = self.model.task_manager_mode()
+        mode_text = self.task_manager_text()[mode]
+        uptime_seconds = int(self.system.get("uptime_seconds", 0))
+        hours = uptime_seconds // 3600
+        minutes = (uptime_seconds % 3600) // 60
+        screen_value = f"{hours:02d}:{minutes:02d}" if mode == "system" else str(int(uptime_seconds / 3600 * 1000))
+
         rows = [
-            ("screen time", self.system["uptime"], "Task Manager/icon_status_follower.png", 61),
-            ("cpu", f"{self.system['cpu']}%", "Task Manager/icon_status_stress.png", 136),
-            ("memory", f"{self.system['memory']}%", "Task Manager/icon_status_love.png", 209),
-            ("disk", f"{self.system['disk']}%", "Task Manager/icon_status_yami.png", 282),
+            ("screen", "Task Manager/icon_status_follower.png", 61),
+            ("cpu", "Task Manager/icon_status_stress.png", 136),
+            ("memory", "Task Manager/icon_status_love.png", 209),
+            ("disk", "Task Manager/icon_status_yami.png", 282),
         ]
-        for label, value, icon, y in rows:
-            self.draw_image(cr, icon, 28, y + 2, 36, 30)
-            threshold_key = {"cpu": "cpu_critical", "memory": "memory_critical", "disk": "disk_critical"}.get(label, "")
-            warning = bool(threshold_key and int(value.rstrip("%")) >= int(cfg.get(threshold_key, 90)))
-            color = WARN if warning else PURPLE_DARK
-            self.draw_text(cr, label.upper(), 78, y, 11, PURPLE, 140, "Dinkie Bitmap 7px")
-            self.draw_text(cr, value, 240, y - 4, 22, color, 105, "PixelMplus10", "bold")
-            if label in {"cpu", "memory", "disk"}:
-                pct = int(value.rstrip("%"))
-                self.draw_bar(cr, 78, y + 32, 264, 8, pct, color)
-        self.draw_text(cr, "hover icons for status / gear opens config", 40, 316, 9, PURPLE, 320, "Dinkie Bitmap 7px")
+        icon_hover: str | None = None
+        for key, icon, y in rows:
+            self.draw_text(cr, str(mode_text["labels"][key]), 79, y, 12, BLUE, 175, "Dinkie Bitmap 7px")
+            self.draw_image(cr, icon, 18, y)
+            if self.point_in_rect(self.mouse[0], self.mouse[1], (18, y, 48, 40)):
+                icon_hover = key
+
+        self.draw_text(cr, screen_value, 78, 79, 30, PURPLE_DARK, None, "Press Start 2P")
+
+        metric_rows = [
+            ("cpu", int(self.system.get("cpu", 0)), 154, 150, 154, 157, 125),
+            ("memory", int(self.system.get("memory", 0)), 151, 226, 151, 233, 198),
+            ("disk", int(self.system.get("disk", 0)), 151, 299, 151, 306, 271),
+        ]
+        for key, value, value_x, value_y, slash_x, slash_y, graph_y in metric_rows:
+            color = WARN if value >= self.task_threshold(key) else PURPLE_DARK
+            self.draw_text(cr, str(value), value_x, value_y, 18, color, None, "Press Start 2P", align="right")
+            self.draw_text(cr, "/100", slash_x, slash_y, 12, GRAY, None, "Press Start 2P")
+            self.draw_histogram(cr, self.task_history.get(key, []), 250, graph_y, 130, 55)
+
+        if icon_hover:
+            self.draw_task_tooltip(cr, mode_text, icon_hover)
+        if self.task_settings_open:
+            self.draw_task_settings(cr)
 
     def draw_ame(self, cr: Any) -> None:
         state = self.model.ame_state(self.system, self.ame_head_hover)

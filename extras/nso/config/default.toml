@@ -2,10 +2,11 @@
 scale = 1.5
 
 [task_manager]
+mode = "system"
 disk_path = "/"
 cpu_critical = 80
-memory_critical = 85
-disk_critical = 90
+memory_critical = 80
+disk_critical = 80
 
 [ame]
 debug = false
