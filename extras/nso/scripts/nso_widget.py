@@ -268,7 +268,7 @@ class NsoState:
                 "last_headpat_at": 0,
             },
             "jine": {"index": 0, "last_sent": int(time.time()) - 4, "last_sticker": "", "last_reply": ""},
-            "social": {"index": 0},
+            "social": {"index": 0, "next_mode": "sequential", "engagement": {}},
             "notes": {"title": self.config.get("quick_notes", {}).get("default_title", "Quick Notes")},
             "welcome": {"warning_accepted": False},
             "weather_cache": {},
@@ -491,18 +491,48 @@ class NsoState:
 
     def current_tweet(self) -> dict[str, Any]:
         if not self.tweets:
-            return {"text": "No posts loaded.", "retweets": 0, "likes": 0, "user": "ame", "image": ""}
-        index = int(self.state.setdefault("social", {}).get("index", 0)) % len(self.tweets)
+            return {"id": 0, "text": "No posts loaded.", "retweets": 0, "likes": 0, "user": "ame", "image": ""}
+        social = self.state.setdefault("social", {})
+        index = int(social.get("index", 0)) % len(self.tweets)
         tweet = dict(self.tweets[index])
         uptime_h = self.system_state()["uptime_seconds"] // 3600
         cfg = self.config.get("social_media", {})
         tweet["retweets"] += int(uptime_h // max(1, int(cfg.get("screen_time_retweet_scale", 8))))
         tweet["likes"] += int(uptime_h // max(1, int(cfg.get("screen_time_like_scale", 11))))
+        engagement = social.setdefault("engagement", {})
+        boosts = engagement.get(str(tweet.get("id", index)), {})
+        tweet["retweets"] += int(boosts.get("retweets", 0))
+        tweet["likes"] += int(boosts.get("likes", 0))
         return tweet
 
     def next_tweet(self) -> None:
         state = self.state.setdefault("social", {})
-        state["index"] = int(state.get("index", 0)) + 1
+        if not self.tweets:
+            return
+        current = int(state.get("index", 0))
+        if self.social_next_mode() == "random" and len(self.tweets) > 1:
+            choices = [index for index in range(len(self.tweets)) if index != current % len(self.tweets)]
+            state["index"] = random.choice(choices)
+        else:
+            state["index"] = current + 1
+        self.save()
+
+    def social_next_mode(self) -> str:
+        mode = str(self.state.setdefault("social", {}).get("next_mode", "sequential"))
+        return "random" if mode == "random" else "sequential"
+
+    def set_social_next_mode(self, mode: str) -> None:
+        self.state.setdefault("social", {})["next_mode"] = "random" if mode == "random" else "sequential"
+        self.save()
+
+    def social_engage(self, kind: str) -> None:
+        tweet = self.current_tweet()
+        tweet_id = str(tweet.get("id", 0))
+        key = "retweets" if kind == "retweet" else "likes"
+        social = self.state.setdefault("social", {})
+        engagement = social.setdefault("engagement", {})
+        boosts = engagement.setdefault(tweet_id, {})
+        boosts[key] = int(boosts.get(key, 0)) + 1
         self.save()
 
     def media_state(self) -> dict[str, Any]:
@@ -731,6 +761,7 @@ class NsoWindow(Gtk.ApplicationWindow):
         self.ame_head_hover = False
         self.ame_menu_open = False
         self.ame_stream_prompt_open = False
+        self.social_settings_open = False
         self.notes_title = str(model.state.get("notes", {}).get("title", "Quick Notes"))
         self.notes_body = model.notes_text()
         try:
@@ -806,7 +837,10 @@ class NsoWindow(Gtk.ApplicationWindow):
     def current_logical_size(self) -> tuple[int, int]:
         if self.spec.key == "social-media":
             geo = self.social_geometry()
-            return int(geo["window_w"]), int(geo["window_h"])
+            width, height = int(geo["window_w"]), int(geo["window_h"])
+            if self.social_settings_open:
+                width, height = max(width, 405), max(height, 365)
+            return width, height
         if self.spec.key == "ame" and (self.ame_menu_open or self.ame_stream_prompt_open):
             menu_x, menu_y, menu_w, menu_h = self.ame_menu_rect()
             return max(self.spec.width, menu_x + menu_w), max(self.spec.height, menu_y + menu_h)
@@ -844,6 +878,13 @@ class NsoWindow(Gtk.ApplicationWindow):
 
     def on_key(self, _controller: Gtk.EventControllerKey, keyval: int, _keycode: int, state: Gdk.ModifierType) -> bool:
         name = Gdk.keyval_name(keyval) or ""
+        if self.spec.key == "social-media":
+            if name == "Escape" and self.social_settings_open:
+                self.social_settings_open = False
+                self.refresh_content_size()
+                self.area.queue_draw()
+                return True
+            return False
         if self.spec.key == "ame":
             if name == "Escape":
                 if self.ame_menu_open or self.ame_stream_prompt_open:
@@ -957,6 +998,16 @@ class NsoWindow(Gtk.ApplicationWindow):
         elif action == "social.next":
             self.model.next_tweet()
             self.refresh_content_size()
+        elif action == "social.settings":
+            self.social_settings_open = not self.social_settings_open
+            self.refresh_content_size()
+        elif action == "social.settings.close":
+            self.social_settings_open = False
+            self.refresh_content_size()
+        elif action.startswith("social.next-mode:"):
+            self.model.set_social_next_mode(action.split(":", 1)[1])
+        elif action.startswith("social.engage:"):
+            self.model.social_engage(action.split(":", 1)[1])
         elif action.startswith("media:"):
             media_control(action.split(":", 1)[1], self.model.config)
         elif action == "ame.menu":
@@ -1358,10 +1409,39 @@ class NsoWindow(Gtk.ApplicationWindow):
         like_x = round(405 * 0.60)
         self.draw_image(cr, "Social Media/icon_retweet.png", retweet_x, count_y, 14, 14)
         self.draw_text(cr, str(tweet.get("retweets", 0)), retweet_x + 17, count_y + 2, 9, (63 / 255, 155 / 255, 83 / 255), 90, "Press Start 2P")
+        self.region((retweet_x - 8, count_y - 6, 132, max(26, button_h + 8)), "social.engage:retweet")
         self.draw_image(cr, "Social Media/icon_star.png", like_x, count_y, 12, 12)
         self.draw_text(cr, str(tweet.get("likes", 0)), like_x + 15, count_y + 2, 9, (182 / 255, 179 / 255, 101 / 255), 90, "Press Start 2P")
+        self.region((like_x - 8, count_y - 6, 132, max(26, button_h + 8)), "social.engage:like")
+        self.draw_image(cr, "Social Media/Settings/button_gear.png", 321, 11)
         self.draw_image(cr, "Social Media/button_right.png", 345, 11)
-        self.region((345, 11, 20, 20), "social.next")
+        self.region((317, 7, 28, 28), "social.settings")
+        self.region((341, 7, 28, 28), "social.next")
+        if self.social_settings_open:
+            self.draw_social_settings(cr)
+
+    def draw_social_settings(self, cr: Any) -> None:
+        self.draw_image(cr, "Social Media/Settings/window.png", 0, 0)
+        self.draw_text(cr, "Social Media Settings", 34, 14, 12, PURPLE, 250, "Dinkie Bitmap 7px")
+        self.draw_image(cr, "button_close.png", 369, 11)
+        self.region((365, 7, 28, 28), "social.settings.close")
+        self.draw_text(cr, "Next Button Action", 55, 76, 16, PURPLE_DARK, 295, "PixelMplus10")
+        self.draw_image(cr, "Social Media/button_right.png", 59, 111)
+        self.draw_text(cr, "Mode", 91, 112, 13, PURPLE, 180, "PixelMplus10")
+
+        mode = self.model.social_next_mode()
+        options = [("random", "Random", 70, 154), ("sequential", "Sequential", 70, 190)]
+        for value, label, x, y in options:
+            selected = mode == value
+            self.draw_image(cr, f"Social Media/Settings/{'enabled' if selected else 'disabled'}.png", x, y)
+            self.draw_text(cr, label, x + 32, y + 2, 13, PURPLE_DARK, 180, "PixelMplus10")
+            self.region((x - 6, y - 6, 220, 33), f"social.next-mode:{value}")
+
+        self.draw_text(cr, "Post Buttons", 55, 246, 16, PURPLE_DARK, 295, "PixelMplus10")
+        self.draw_image(cr, "Social Media/icon_retweet.png", 72, 286, 14, 14)
+        self.draw_text(cr, "Retweet", 104, 282, 13, PURPLE, 180, "PixelMplus10")
+        self.draw_image(cr, "Social Media/icon_star.png", 234, 286, 12, 12)
+        self.draw_text(cr, "Like", 264, 282, 13, PURPLE, 120, "PixelMplus10")
 
     def draw_media_player(self, cr: Any) -> None:
         self.draw_frame(cr, "Media Player/window.png", "Media Player")
