@@ -762,6 +762,7 @@ class NsoWindow(Gtk.ApplicationWindow):
         self.ame_menu_open = False
         self.ame_stream_prompt_open = False
         self.social_settings_open = False
+        self.social_feedback: tuple[str, float] | None = None
         self.notes_title = str(model.state.get("notes", {}).get("title", "Quick Notes"))
         self.notes_body = model.notes_text()
         try:
@@ -1007,7 +1008,9 @@ class NsoWindow(Gtk.ApplicationWindow):
         elif action.startswith("social.next-mode:"):
             self.model.set_social_next_mode(action.split(":", 1)[1])
         elif action.startswith("social.engage:"):
-            self.model.social_engage(action.split(":", 1)[1])
+            kind = action.split(":", 1)[1]
+            self.model.social_engage(kind)
+            self.social_feedback = (kind, time.time() + 1.2)
         elif action.startswith("media:"):
             media_control(action.split(":", 1)[1], self.model.config)
         elif action == "ame.menu":
@@ -1405,6 +1408,8 @@ class NsoWindow(Gtk.ApplicationWindow):
         body = str(tweet.get("text", ""))
         if body:
             self.draw_text(cr, body, 16, footer_y + 5, 10, WHITE, image_w - 16, "PixelMplus10", ellipsize=True)
+        self.region((8, footer_y, image_w // 2, button_h), "social.engage:retweet")
+        self.region((8 + image_w // 2, footer_y, image_w - image_w // 2, button_h), "social.engage:like")
         retweet_x = round(405 * 0.22)
         like_x = round(405 * 0.60)
         self.draw_image(cr, "Social Media/icon_retweet.png", retweet_x, count_y, 14, 14)
@@ -1417,6 +1422,14 @@ class NsoWindow(Gtk.ApplicationWindow):
         self.draw_image(cr, "Social Media/button_right.png", 345, 11)
         self.region((317, 7, 28, 28), "social.settings")
         self.region((341, 7, 28, 28), "social.next")
+        if self.social_feedback and self.social_feedback[1] > time.time():
+            kind, _until = self.social_feedback
+            label = "REPOST +1" if kind == "retweet" else "LIKE +1"
+            x = retweet_x + 30 if kind == "retweet" else like_x + 30
+            color = (63 / 255, 155 / 255, 83 / 255) if kind == "retweet" else (182 / 255, 179 / 255, 101 / 255)
+            self.draw_text(cr, label, x, footer_y - 16, 9, color, 110, "Dinkie Bitmap 7px")
+        elif self.social_feedback:
+            self.social_feedback = None
         if self.social_settings_open:
             self.draw_social_settings(cr)
 
